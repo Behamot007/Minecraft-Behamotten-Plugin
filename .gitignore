@@ -6,5 +6,6 @@ build
 
 # Ignore generated run directories
 run/
-gradle/wrapper/gradle-wrapper.jar
 
+# Ignore downloaded Gradle wrapper binary
+gradle/wrapper/gradle-wrapper.jar
