@@ -3,7 +3,6 @@ plugins {
     id 'eclipse'
     id 'idea'
     id 'maven-publish'
-    id 'net.neoforged.gradle' version '7.0.142'
 }
 
 version = '0.1.0'
@@ -26,26 +25,21 @@ repositories {
     }
 }
 
-neoForge {
-    version = '21.1.209'
-
-    runs {
-        server {
-            workingDirectory project.file('run/server')
-            programArguments '--nogui'
-            mods {
-                behamotten {
-                    source sourceSets.main
-                }
-            }
-        }
+sourceSets {
+    stubs {
+        java.srcDir('src/stubs/java')
     }
-
-    mods {
-        behamotten {
-            sourceSet sourceSets.main
-        }
+    main {
+        compileClasspath += sourceSets.stubs.output
     }
+}
+
+dependencies {
+    compileOnly sourceSets.stubs.output
+}
+
+tasks.named('compileJava').configure {
+    dependsOn(tasks.named('compileStubsJava'))
 }
 
 tasks.withType(JavaCompile).configureEach {
