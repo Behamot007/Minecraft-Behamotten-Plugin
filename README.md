@@ -5,7 +5,7 @@ Ein NeoForge-Mod für Minecraft 1.21.1, der ein einfaches Event-Teilnahmesystem 
 ## Voraussetzungen
 
 - Java 21 (getestet mit 21.0.8)
-- Gradle-Wrapper-Skripte (`gradlew` / `gradlew.bat`, laden das benötigte Wrapper-JAR automatisch)
+- Gradle-Wrapper-Skripte (`gradlew` / `gradlew.bat` mit Gradle 8.10.2, enthalten das benötigte Wrapper-JAR)
 - Minecraft 1.21.1 Server mit NeoForge 21.1.209 (getestet auf ArcLight 1.0.2-SNAPSHOT-5857740)
 
 ## Kompilieren
@@ -14,9 +14,7 @@ Ein NeoForge-Mod für Minecraft 1.21.1, der ein einfaches Event-Teilnahmesystem 
 ./gradlew build
 ```
 
-Beim ersten Aufruf lädt das Skript automatisch das benötigte `gradle-wrapper.jar` in `gradle/wrapper/` herunter. Die fertige, serverfähige Mod liegt anschließend unter `build/libs/behamotten-event-tools-<version>.jar` und kann direkt in den `mods/`-Ordner Ihres Servers kopiert werden.
-
-Ohne Internetzugang können Sie die Datei auch manuell von `https://repo.gradle.org/gradle/libs-releases-local/org/gradle/gradle-wrapper/8.14.3/gradle-wrapper-8.14.3.jar` herunterladen und im Ordner `gradle/wrapper/` ablegen.
+Das Skript verwendet das im Repository enthaltene `gradle/wrapper/gradle-wrapper.jar` und lädt automatisch Gradle 8.10.2, bevor es einen normalen Gradle-Build ausführt. Die fertige, serverfähige Mod liegt anschließend unter `build/libs/behamotten-event-tools-<version>.jar` und kann direkt in den `mods/`-Ordner Ihres Servers kopiert werden.
 
 ## Entwicklermodus (optional)
 
