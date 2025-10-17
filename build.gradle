@@ -8,10 +8,6 @@ plugins {
 version = '0.1.0'
 group = 'com.behamotten'
 
-base {
-    archivesName = 'behamotten-event-tools'
-}
-
 java {
     toolchain.languageVersion = JavaLanguageVersion.of(21)
     withSourcesJar()
@@ -47,6 +43,7 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 jar {
+    archiveBaseName.set('behamotten-event-tools')
     from(sourceSets.main.output)
     manifest {
         attributes(
