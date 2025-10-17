@@ -117,7 +117,7 @@ esac
 # Ensure the Gradle wrapper JAR is available (binary files are excluded from VCS).
 wrapper_jar="$APP_HOME/gradle/wrapper/gradle-wrapper.jar"
 if [ ! -f "$wrapper_jar" ]; then
-    wrapper_version="8.14.3"
+    wrapper_version="6.1.1"
     wrapper_url="https://repo.gradle.org/gradle/libs-releases-local/org/gradle/gradle-wrapper/${wrapper_version}/gradle-wrapper-${wrapper_version}.jar"
     mkdir -p "${wrapper_jar%/*}" || die "Could not create wrapper directory"
     if command -v curl >/dev/null 2>&1; then
