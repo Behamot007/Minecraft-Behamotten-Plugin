@@ -1,0 +1,75 @@
+plugins {
+    id 'java'
+    id 'eclipse'
+    id 'idea'
+    id 'maven-publish'
+    id 'net.neoforged.gradle' version '7.0.142'
+}
+
+version = '0.1.0'
+group = 'com.behamotten'
+
+base {
+    archivesName = 'behamotten-event-tools'
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(21)
+    withSourcesJar()
+}
+
+repositories {
+    mavenCentral()
+    maven {
+        name = 'NeoForge'
+        url = uri('https://maven.neoforged.net/releases')
+    }
+}
+
+neoForge {
+    version = '21.1.209'
+
+    runs {
+        server {
+            workingDirectory project.file('run/server')
+            programArguments '--nogui'
+            mods {
+                behamotten {
+                    source sourceSets.main
+                }
+            }
+        }
+    }
+
+    mods {
+        behamotten {
+            sourceSet sourceSets.main
+        }
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+jar {
+    from(sourceSets.main.output)
+    manifest {
+        attributes(
+            'Specification-Title': 'Behamotten Event Tools',
+            'Specification-Vendor': 'Behamotten',
+            'Specification-Version': project.version,
+            'Implementation-Title': project.name,
+            'Implementation-Version': project.version,
+            'Implementation-Vendor': 'Behamotten'
+        )
+    }
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+        }
+    }
+}
