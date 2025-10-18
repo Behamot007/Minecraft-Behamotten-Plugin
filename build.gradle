@@ -1,3 +1,5 @@
+import org.gradle.api.tasks.bundling.Jar
+
 plugins {
     id 'java'
     id 'eclipse'
@@ -8,11 +10,48 @@ plugins {
 version = '0.1.0'
 group = 'com.behamotten'
 
-java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(21)
+def registerFallbackSourcesJar = { proj ->
+    def existing = proj.tasks.findByName('sourcesJar')
+    if (existing != null) {
+        return proj.tasks.named('sourcesJar', Jar)
     }
-    withSourcesJar()
+
+    proj.tasks.register('sourcesJar', Jar) {
+        archiveClassifier.set('sources')
+        from(proj.sourceSets.main.allSource)
+    }
+}
+
+def configureJavaAndSourcesJar = { proj ->
+    def result = [
+        sourcesJarProvider   : null,
+        usingFallbackSources : false
+    ]
+
+    Class<?> javaExtensionClass = null
+    try {
+        javaExtensionClass = Class.forName('org.gradle.api.plugins.JavaPluginExtension')
+    } catch (Throwable ignored) {
+        javaExtensionClass = null
+    }
+
+    def javaExtension = javaExtensionClass != null ? proj.extensions.findByType(javaExtensionClass) : null
+
+    if (javaExtension != null) {
+        if (javaExtension.metaClass.respondsTo(javaExtension, 'getToolchain')) {
+            javaExtension.toolchain.languageVersion = JavaLanguageVersion.of(21)
+        }
+
+        if (javaExtension.metaClass.respondsTo(javaExtension, 'withSourcesJar')) {
+            javaExtension.withSourcesJar()
+            result.sourcesJarProvider = proj.tasks.named('sourcesJar', Jar)
+            return result
+        }
+    }
+
+    result.usingFallbackSources = true
+    result.sourcesJarProvider = registerFallbackSourcesJar(proj)
+    return result
 }
 
 repositories {
@@ -31,6 +70,10 @@ sourceSets {
         compileClasspath += sourceSets.stubs.output
     }
 }
+
+def sourcesJarSetup = configureJavaAndSourcesJar(project)
+def sourcesJarProvider = sourcesJarSetup.sourcesJarProvider
+def usingFallbackSources = sourcesJarSetup.usingFallbackSources
 
 dependencies {
     compileOnly sourceSets.stubs.output
@@ -63,6 +106,9 @@ publishing {
     publications {
         mavenJava(MavenPublication) {
             from components.java
+            if (usingFallbackSources && sourcesJarProvider != null) {
+                artifact sourcesJarProvider
+            }
         }
     }
 }
