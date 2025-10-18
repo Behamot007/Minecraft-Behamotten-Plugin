@@ -129,7 +129,7 @@ if [ ! -f "$wrapper_jar" ]; then
     fi
 fi
 
-CLASSPATH="\\\"$wrapper_jar\\\""
+CLASSPATH="$wrapper_jar"
 
 
 # Determine the Java command to use to start the JVM.
