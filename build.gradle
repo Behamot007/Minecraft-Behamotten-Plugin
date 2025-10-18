@@ -13,13 +13,22 @@ group = 'com.behamotten'
 def registerFallbackSourcesJar = { proj ->
     def existing = proj.tasks.findByName('sourcesJar')
     if (existing != null) {
-        return proj.tasks.named('sourcesJar', Jar)
+        return existing
     }
 
-    proj.tasks.register('sourcesJar', Jar) {
-        archiveClassifier.set('sources')
-        from(proj.sourceSets.main.allSource)
+    def tasks = proj.tasks
+    boolean canRegister = tasks.metaClass.respondsTo(tasks, 'register', String, Class, Closure)
+    if (canRegister) {
+        return tasks.register('sourcesJar', Jar) {
+            archiveClassifier.set('sources')
+            from(proj.sourceSets.main.allSource)
+        }
     }
+
+    def created = tasks.create('sourcesJar', Jar)
+    created.archiveClassifier.set('sources')
+    created.from(proj.sourceSets.main.allSource)
+    return created
 }
 
 def configureJavaAndSourcesJar = { proj ->
@@ -44,7 +53,12 @@ def configureJavaAndSourcesJar = { proj ->
 
         if (javaExtension.metaClass.respondsTo(javaExtension, 'withSourcesJar')) {
             javaExtension.withSourcesJar()
-            result.sourcesJarProvider = proj.tasks.named('sourcesJar', Jar)
+            def sourcesTask = proj.tasks.findByName('sourcesJar')
+            if (sourcesTask != null) {
+                result.sourcesJarProvider = sourcesTask
+            } else {
+                result.sourcesJarProvider = registerFallbackSourcesJar(proj)
+            }
             return result
         }
     }
