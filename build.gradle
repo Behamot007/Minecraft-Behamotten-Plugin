@@ -18,16 +18,23 @@ def registerFallbackSourcesJar = { proj ->
 
     def tasks = proj.tasks
     boolean canRegister = tasks.metaClass.respondsTo(tasks, 'register', String, Class, Closure)
+    def configureSourcesJarTask = { Jar jarTask ->
+        if (jarTask.metaClass.respondsTo(jarTask, 'getArchiveClassifier')) {
+            jarTask.archiveClassifier.set('sources')
+        } else {
+            jarTask.classifier = 'sources'
+        }
+        jarTask.from(proj.sourceSets.main.allSource)
+    }
+
     if (canRegister) {
-        return tasks.register('sourcesJar', Jar) {
-            archiveClassifier.set('sources')
-            from(proj.sourceSets.main.allSource)
+        return tasks.register('sourcesJar', Jar) { Jar jarTask ->
+            configureSourcesJarTask(jarTask)
         }
     }
 
     def created = tasks.create('sourcesJar', Jar)
-    created.archiveClassifier.set('sources')
-    created.from(proj.sourceSets.main.allSource)
+    configureSourcesJarTask(created)
     return created
 }
 
