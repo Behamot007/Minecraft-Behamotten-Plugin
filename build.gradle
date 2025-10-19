@@ -59,14 +59,35 @@ dependencies {
     compileOnly sourceSets.stubs.output
 }
 
-tasks.register('runTests', JavaExec) { task ->
-    task.group = 'verification'
-    task.description = 'Runs the custom unit tests without requiring external dependencies.'
-    task.classpath = sourceSets.test.runtimeClasspath
-    task.mainClass = 'com.behamotten.events.AllTests'
+def taskContainer = tasks
+
+if (taskContainer.metaClass.respondsTo(taskContainer, 'register', Object[])) {
+    def runTestsProvider = taskContainer.register('runTests', JavaExec)
+    if (runTestsProvider.metaClass.respondsTo(runTestsProvider, 'configure', Closure)) {
+        runTestsProvider.configure { JavaExec task ->
+            task.group = 'verification'
+            task.description = 'Runs the custom unit tests without requiring external dependencies.'
+            task.classpath = sourceSets.test.runtimeClasspath
+            task.mainClass = 'com.behamotten.events.AllTests'
+        }
+    } else if (runTestsProvider.metaClass.respondsTo(runTestsProvider, 'get')) {
+        def task = runTestsProvider.get()
+        if (task instanceof JavaExec) {
+            task.group = 'verification'
+            task.description = 'Runs the custom unit tests without requiring external dependencies.'
+            task.classpath = sourceSets.test.runtimeClasspath
+            task.mainClass = 'com.behamotten.events.AllTests'
+        }
+    }
+} else {
+    taskContainer.create('runTests', JavaExec) { JavaExec task ->
+        task.group = 'verification'
+        task.description = 'Runs the custom unit tests without requiring external dependencies.'
+        task.classpath = sourceSets.test.runtimeClasspath
+        task.mainClass = 'com.behamotten.events.AllTests'
+    }
 }
 
-def taskContainer = tasks
 if (taskContainer.metaClass.respondsTo(taskContainer, 'named', Object[])) {
     taskContainer.named('compileJava') {
         dependsOn 'compileStubsJava'
