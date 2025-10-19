@@ -104,8 +104,15 @@ tasks.getByName('compileJava') {
     dependsOn 'compileStubsJava'
 }
 
-tasks.withType(JavaCompile).configureEach {
-    options.encoding = 'UTF-8'
+def javaCompileTasks = tasks.withType(JavaCompile)
+if (javaCompileTasks.metaClass.respondsTo(javaCompileTasks, 'configureEach')) {
+    javaCompileTasks.configureEach {
+        options.encoding = 'UTF-8'
+    }
+} else {
+    javaCompileTasks.all {
+        options.encoding = 'UTF-8'
+    }
 }
 
 jar {
