@@ -68,6 +68,9 @@ def javaCompileTasks = tasks.withType(JavaCompile)
 if (javaCompileTasks.metaClass.respondsTo(javaCompileTasks, 'configureEach', Closure)) {
     javaCompileTasks.configureEach {
         options.encoding = 'UTF-8'
+        if (options.metaClass.respondsTo(options, 'setRelease', Object)) {
+            options.release = 21
+        }
     }
 } else if (javaCompileTasks.metaClass.respondsTo(javaCompileTasks, 'all', Closure)) {
     javaCompileTasks.all {
