@@ -64,8 +64,19 @@ if (taskContainer.metaClass.respondsTo(taskContainer, 'named', Object[])) {
     taskContainer.getByName('compileJava').dependsOn 'compileStubsJava'
 }
 
-tasks.withType(JavaCompile).configureEach {
-    options.encoding = 'UTF-8'
+def javaCompileTasks = tasks.withType(JavaCompile)
+if (javaCompileTasks.metaClass.respondsTo(javaCompileTasks, 'configureEach', Closure)) {
+    javaCompileTasks.configureEach {
+        options.encoding = 'UTF-8'
+    }
+} else if (javaCompileTasks.metaClass.respondsTo(javaCompileTasks, 'all', Closure)) {
+    javaCompileTasks.all {
+        options.encoding = 'UTF-8'
+    }
+} else {
+    javaCompileTasks.each { task ->
+        task.options.encoding = 'UTF-8'
+    }
 }
 
 jar {
