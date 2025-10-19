@@ -47,19 +47,24 @@ public final class EventCommandRegistrar implements CommandExecutor, TabComplete
     @Override
     public boolean onCommand(final CommandSender sender, final Command command, final String label, final String[] args) {
         final String name = command.getName().toLowerCase(Locale.ROOT);
-        return switch (name) {
-            case "setevents" -> handleSetEvents(sender);
-            case "unsetevents" -> handleUnsetEvents(sender);
-            case "getalleventuser" -> handleGetAllEventUser(sender, args);
-            default -> false;
-        };
+        switch (name) {
+            case "setevents":
+                return handleSetEvents(sender);
+            case "unsetevents":
+                return handleUnsetEvents(sender);
+            case "getalleventuser":
+                return handleGetAllEventUser(sender, args);
+            default:
+                return false;
+        }
     }
 
     private boolean handleSetEvents(final CommandSender sender) {
-        if (!(sender instanceof final Player player)) {
+        if (!(sender instanceof Player)) {
             sender.sendMessage(ChatColor.RED + "Dieser Befehl kann nur von Spielern verwendet werden.");
             return true;
         }
+        final Player player = (Player) sender;
         final boolean added = participationData.addParticipant(player);
         if (added) {
             sender.sendMessage(ChatColor.GREEN + "Du bist jetzt für Events registriert.");
@@ -70,10 +75,11 @@ public final class EventCommandRegistrar implements CommandExecutor, TabComplete
     }
 
     private boolean handleUnsetEvents(final CommandSender sender) {
-        if (!(sender instanceof final Player player)) {
+        if (!(sender instanceof Player)) {
             sender.sendMessage(ChatColor.RED + "Dieser Befehl kann nur von Spielern verwendet werden.");
             return true;
         }
+        final Player player = (Player) sender;
         final boolean removed = participationData.removeParticipant(player.getUniqueId());
         if (removed) {
             sender.sendMessage(ChatColor.GREEN + "Du wurdest von den Event-Teilnehmern entfernt.");
