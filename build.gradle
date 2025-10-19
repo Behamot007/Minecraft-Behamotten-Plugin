@@ -115,10 +115,14 @@ if (javaCompileTasks.metaClass.respondsTo(javaCompileTasks, 'configureEach')) {
     }
 }
 
-jar {
-    archiveBaseName.set('behamotten-event-tools')
-    from(sourceSets.main.output)
-    manifest {
+jar { Jar jarTask ->
+    if (jarTask.metaClass.respondsTo(jarTask, 'getArchiveBaseName')) {
+        jarTask.archiveBaseName.set('behamotten-event-tools')
+    } else {
+        jarTask.baseName = 'behamotten-event-tools'
+    }
+    jarTask.from(sourceSets.main.output)
+    jarTask.manifest {
         attributes(
             'Specification-Title': 'Behamotten Event Tools',
             'Specification-Vendor': 'Behamotten',
