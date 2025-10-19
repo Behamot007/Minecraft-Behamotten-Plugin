@@ -87,7 +87,10 @@ public final class EventParticipationData {
         }
 
         try {
-            Files.createDirectories(dataFile.getParent());
+            final Path parent = dataFile.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
             final YamlConfiguration configuration = new YamlConfiguration();
             final Map<String, Object> serialized = new LinkedHashMap<>();
             for (final Map.Entry<UUID, String> entry : participants.entrySet()) {
