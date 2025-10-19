@@ -175,7 +175,31 @@ final class EventCommandRegistrarTest {
         }
     }
 
-    private record TestEnvironment(TestJavaPlugin plugin, EventParticipationData participationData, EventCommandRegistrar registrar) {
+    private static final class TestEnvironment {
+        private final TestJavaPlugin plugin;
+        private final EventParticipationData participationData;
+        private final EventCommandRegistrar registrar;
+
+        private TestEnvironment(
+                final TestJavaPlugin plugin,
+                final EventParticipationData participationData,
+                final EventCommandRegistrar registrar) {
+            this.plugin = plugin;
+            this.participationData = participationData;
+            this.registrar = registrar;
+        }
+
+        private TestJavaPlugin plugin() {
+            return plugin;
+        }
+
+        private EventParticipationData participationData() {
+            return participationData;
+        }
+
+        private EventCommandRegistrar registrar() {
+            return registrar;
+        }
     }
 
     private void assertMessages(final List<String> actual, final String expected) {
