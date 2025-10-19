@@ -1,0 +1,29 @@
+name: BehamottenEventTools
+main: com.behamotten.events.BehamottenEventsPlugin
+version: 0.1.0
+api-version: '1.20.6'
+authors:
+  - Behamotten
+commands:
+  setevents:
+    description: Registriert den Spieler für Event-Aktionen.
+    usage: /setevents
+    permission: behamotten.setevents
+  unsetevents:
+    description: Entfernt den Spieler aus der Eventliste.
+    usage: /unsetevents
+    permission: behamotten.unsetevents
+  getalleventuser:
+    description: Listet registrierte Event-Teilnehmer auf oder wählt einen zufällig aus.
+    usage: /getalleventuser [@r]
+    permission: behamotten.getall
+permissions:
+  behamotten.setevents:
+    description: Erlaubt einem Spieler, sich für Events zu registrieren.
+    default: true
+  behamotten.unsetevents:
+    description: Erlaubt einem Spieler, sich von Events abzumelden.
+    default: true
+  behamotten.getall:
+    description: Erlaubt das Anzeigen aller registrierten Event-Teilnehmer.
+    default: op

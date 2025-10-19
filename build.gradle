@@ -1,86 +1,17 @@
-import org.gradle.api.tasks.bundling.Jar
-
 plugins {
     id 'java'
-    id 'eclipse'
-    id 'idea'
-    id 'maven-publish'
 }
 
 version = '0.1.0'
 group = 'com.behamotten'
 
-def registerFallbackSourcesJar = { proj ->
-    def existing = proj.tasks.findByName('sourcesJar')
-    if (existing != null) {
-        return existing
-    }
-
-    def tasks = proj.tasks
-    boolean canRegister = tasks.metaClass.respondsTo(tasks, 'register', String, Class, Closure)
-    def configureSourcesJarTask = { Jar jarTask ->
-        if (jarTask.metaClass.respondsTo(jarTask, 'getArchiveClassifier')) {
-            jarTask.archiveClassifier.set('sources')
-        } else {
-            jarTask.classifier = 'sources'
-        }
-        jarTask.from(proj.sourceSets.main.allSource)
-    }
-
-    if (canRegister) {
-        return tasks.register('sourcesJar', Jar) { Jar jarTask ->
-            configureSourcesJarTask(jarTask)
-        }
-    }
-
-    def created = tasks.create('sourcesJar', Jar)
-    configureSourcesJarTask(created)
-    return created
-}
-
-def configureJavaAndSourcesJar = { proj ->
-    def result = [
-        sourcesJarProvider   : null,
-        usingFallbackSources : false
-    ]
-
-    Class<?> javaExtensionClass = null
-    try {
-        javaExtensionClass = Class.forName('org.gradle.api.plugins.JavaPluginExtension')
-    } catch (Throwable ignored) {
-        javaExtensionClass = null
-    }
-
-    def javaExtension = javaExtensionClass != null ? proj.extensions.findByType(javaExtensionClass) : null
-
-    if (javaExtension != null) {
-        if (javaExtension.metaClass.respondsTo(javaExtension, 'getToolchain')) {
-            javaExtension.toolchain.languageVersion = JavaLanguageVersion.of(21)
-        }
-
-        if (javaExtension.metaClass.respondsTo(javaExtension, 'withSourcesJar')) {
-            javaExtension.withSourcesJar()
-            def sourcesTask = proj.tasks.findByName('sourcesJar')
-            if (sourcesTask != null) {
-                result.sourcesJarProvider = sourcesTask
-            } else {
-                result.sourcesJarProvider = registerFallbackSourcesJar(proj)
-            }
-            return result
-        }
-    }
-
-    result.usingFallbackSources = true
-    result.sourcesJarProvider = registerFallbackSourcesJar(proj)
-    return result
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(21)
+    withSourcesJar()
 }
 
 repositories {
     mavenCentral()
-    maven {
-        name = 'NeoForge'
-        url = uri('https://maven.neoforged.net/releases')
-    }
 }
 
 sourceSets {
@@ -92,37 +23,21 @@ sourceSets {
     }
 }
 
-def sourcesJarSetup = configureJavaAndSourcesJar(project)
-def sourcesJarProvider = sourcesJarSetup.sourcesJarProvider
-def usingFallbackSources = sourcesJarSetup.usingFallbackSources
-
 dependencies {
     compileOnly sourceSets.stubs.output
 }
 
-tasks.getByName('compileJava') {
+tasks.named('compileJava') {
     dependsOn 'compileStubsJava'
 }
 
-def javaCompileTasks = tasks.withType(JavaCompile)
-if (javaCompileTasks.metaClass.respondsTo(javaCompileTasks, 'configureEach')) {
-    javaCompileTasks.configureEach {
-        options.encoding = 'UTF-8'
-    }
-} else {
-    javaCompileTasks.all {
-        options.encoding = 'UTF-8'
-    }
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
 }
 
-jar { Jar jarTask ->
-    if (jarTask.metaClass.respondsTo(jarTask, 'getArchiveBaseName')) {
-        jarTask.archiveBaseName.set('behamotten-event-tools')
-    } else {
-        jarTask.baseName = 'behamotten-event-tools'
-    }
-    jarTask.from(sourceSets.main.output)
-    jarTask.manifest {
+jar {
+    archiveBaseName.set('behamotten-event-tools')
+    manifest {
         attributes(
             'Specification-Title': 'Behamotten Event Tools',
             'Specification-Vendor': 'Behamotten',
@@ -131,16 +46,5 @@ jar { Jar jarTask ->
             'Implementation-Version': project.version,
             'Implementation-Vendor': 'Behamotten'
         )
-    }
-}
-
-publishing {
-    publications {
-        mavenJava(MavenPublication) {
-            from components.java
-            if (usingFallbackSources && sourcesJarProvider != null) {
-                artifact sourcesJarProvider
-            }
-        }
     }
 }

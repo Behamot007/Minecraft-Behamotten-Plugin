@@ -1,89 +1,124 @@
 package com.behamotten.events;
 
+import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
+import java.util.Optional;
 
-import com.mojang.brigadier.arguments.StringArgumentType;
-
-import net.minecraft.commands.CommandSourceStack;
-import net.minecraft.commands.Commands;
-import net.minecraft.commands.SharedSuggestionProvider;
-import net.minecraft.network.chat.Component;
-import net.minecraft.server.level.ServerPlayer;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import org.bukkit.ChatColor;
+import org.bukkit.command.Command;
+import org.bukkit.command.CommandExecutor;
+import org.bukkit.command.CommandSender;
+import org.bukkit.command.PluginCommand;
+import org.bukkit.command.TabCompleter;
+import org.bukkit.entity.Player;
+import org.bukkit.plugin.java.JavaPlugin;
 
 /**
  * Registers and implements the commands that manage event participation.
  */
-public final class EventCommandRegistrar {
+public final class EventCommandRegistrar implements CommandExecutor, TabCompleter {
 
-    @SubscribeEvent
-    public void onRegisterCommands(final RegisterCommandsEvent event) {
-        event.getDispatcher().register(Commands.literal("setEvents")
-            .requires(source -> source.getEntity() instanceof ServerPlayer)
-            .executes(context -> executeSetEvents(context.getSource())));
+    private final JavaPlugin plugin;
+    private final EventParticipationData participationData;
 
-        event.getDispatcher().register(Commands.literal("unsetEvents")
-            .requires(source -> source.getEntity() instanceof ServerPlayer)
-            .executes(context -> executeUnsetEvents(context.getSource())));
-
-        event.getDispatcher().register(Commands.literal("getAllEventUser")
-            .requires(source -> source.hasPermission(2))
-            .executes(context -> executeListParticipants(context.getSource()))
-            .then(Commands.argument("selector", StringArgumentType.word())
-                .suggests((context, builder) -> SharedSuggestionProvider.suggest(List.of("@r"), builder))
-                .executes(context -> executeListParticipants(context.getSource(), StringArgumentType.getString(context, "selector")))));
+    public EventCommandRegistrar(final JavaPlugin plugin, final EventParticipationData participationData) {
+        this.plugin = Objects.requireNonNull(plugin, "plugin");
+        this.participationData = Objects.requireNonNull(participationData, "participationData");
     }
 
-    private int executeSetEvents(final CommandSourceStack source) {
-        final ServerPlayer player = source.getPlayerOrException();
-        final EventParticipationData data = EventParticipationData.get(source.getServer());
-        final boolean added = data.addParticipant(player);
+    public void registerCommands() {
+        register("setevents");
+        register("unsetevents");
+        register("getalleventuser");
+    }
+
+    private void register(final String commandName) {
+        final PluginCommand command = plugin.getCommand(commandName);
+        if (command == null) {
+            plugin.getLogger().severe("Command '" + commandName + "' is not defined in plugin.yml.");
+            return;
+        }
+        command.setExecutor(this);
+        command.setTabCompleter(this);
+    }
+
+    @Override
+    public boolean onCommand(final CommandSender sender, final Command command, final String label, final String[] args) {
+        final String name = command.getName().toLowerCase(Locale.ROOT);
+        return switch (name) {
+            case "setevents" -> handleSetEvents(sender);
+            case "unsetevents" -> handleUnsetEvents(sender);
+            case "getalleventuser" -> handleGetAllEventUser(sender, args);
+            default -> false;
+        };
+    }
+
+    private boolean handleSetEvents(final CommandSender sender) {
+        if (!(sender instanceof final Player player)) {
+            sender.sendMessage(ChatColor.RED + "Dieser Befehl kann nur von Spielern verwendet werden.");
+            return true;
+        }
+        final boolean added = participationData.addParticipant(player);
         if (added) {
-            source.sendSuccess(() -> Component.translatable("commands.behamotten.set_events.added", player.getGameProfile().getName()), false);
+            sender.sendMessage(ChatColor.GREEN + "Du bist jetzt für Events registriert.");
         } else {
-            source.sendSuccess(() -> Component.translatable("commands.behamotten.set_events.already", player.getGameProfile().getName()), false);
+            sender.sendMessage(ChatColor.YELLOW + "Du warst bereits für Events registriert.");
         }
-        return 1;
+        return true;
     }
 
-    private int executeUnsetEvents(final CommandSourceStack source) {
-        final ServerPlayer player = source.getPlayerOrException();
-        final EventParticipationData data = EventParticipationData.get(source.getServer());
-        final boolean removed = data.removeParticipant(player.getUUID());
+    private boolean handleUnsetEvents(final CommandSender sender) {
+        if (!(sender instanceof final Player player)) {
+            sender.sendMessage(ChatColor.RED + "Dieser Befehl kann nur von Spielern verwendet werden.");
+            return true;
+        }
+        final boolean removed = participationData.removeParticipant(player.getUniqueId());
         if (removed) {
-            source.sendSuccess(() -> Component.translatable("commands.behamotten.unset_events.removed", player.getGameProfile().getName()), false);
+            sender.sendMessage(ChatColor.GREEN + "Du wurdest von den Event-Teilnehmern entfernt.");
         } else {
-            source.sendSuccess(() -> Component.translatable("commands.behamotten.unset_events.not_found", player.getGameProfile().getName()), false);
+            sender.sendMessage(ChatColor.YELLOW + "Du warst nicht für Events registriert.");
         }
-        return removed ? 1 : 0;
+        return true;
     }
 
-    private int executeListParticipants(final CommandSourceStack source) {
-        final EventParticipationData data = EventParticipationData.get(source.getServer());
-        final List<String> participants = data.getParticipantNames();
-        if (participants.isEmpty()) {
-            source.sendSuccess(() -> Component.translatable("commands.behamotten.get_all.empty"), false);
-            return 0;
+    private boolean handleGetAllEventUser(final CommandSender sender, final String[] args) {
+        if (args.length == 0) {
+            final List<String> participants = participationData.getParticipantNames();
+            if (participants.isEmpty()) {
+                sender.sendMessage(ChatColor.RED + "Es sind keine Event-Teilnehmer registriert.");
+                return true;
+            }
+            final String joinedNames = String.join(", ", participants);
+            sender.sendMessage(ChatColor.GOLD + "Event-Teilnehmer (" + participants.size() + "): " + ChatColor.YELLOW + joinedNames);
+            return true;
         }
-        source.sendSuccess(() -> Component.translatable("commands.behamotten.get_all.list", String.join(", ", participants), participants.size()), false);
-        return participants.size();
+
+        if (args.length >= 1) {
+            final String selector = args[0];
+            if ("@r".equalsIgnoreCase(selector)) {
+                final Optional<String> random = participationData.getRandomParticipantName();
+                if (random.isPresent()) {
+                    sender.sendMessage(ChatColor.GOLD + "Zufällig ausgewählter Teilnehmer: " + ChatColor.YELLOW + random.get());
+                } else {
+                    sender.sendMessage(ChatColor.RED + "Es sind keine Event-Teilnehmer registriert.");
+                }
+                return true;
+            }
+            sender.sendMessage(ChatColor.RED + "Unbekannter Selektor '" + selector + "'. Verwende @r für eine zufällige Auswahl.");
+            return true;
+        }
+
+        return true;
     }
 
-    private int executeListParticipants(final CommandSourceStack source, final String selector) {
-        if ("@r".equals(selector)) {
-            final EventParticipationData data = EventParticipationData.get(source.getServer());
-            return data.getRandomParticipantName()
-                .map(name -> {
-                    source.sendSuccess(() -> Component.translatable("commands.behamotten.get_all.random", name), false);
-                    return 1;
-                })
-                .orElseGet(() -> {
-                    source.sendSuccess(() -> Component.translatable("commands.behamotten.get_all.empty"), false);
-                    return 0;
-                });
+    @Override
+    public List<String> onTabComplete(final CommandSender sender, final Command command, final String alias, final String[] args) {
+        final String name = command.getName().toLowerCase(Locale.ROOT);
+        if ("getalleventuser".equals(name) && args.length == 1) {
+            return List.of("@r");
         }
-        source.sendFailure(Component.translatable("commands.behamotten.get_all.invalid_selector", selector));
-        return 0;
+        return Collections.emptyList();
     }
 }

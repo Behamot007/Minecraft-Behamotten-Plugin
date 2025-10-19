@@ -1,12 +1,12 @@
 # Behamotten Event Tools
 
-Ein NeoForge-Mod für Minecraft 1.21.1, der ein einfaches Event-Teilnahmesystem bereitstellt. Spieler können sich selbst für Event-Aktionen anmelden oder wieder austragen, während Administratoren alle registrierten Teilnehmer im Blick behalten.
+Ein ArcLight-/Paper-kompatibles Bukkit-Plugin für Minecraft 1.21.1, das ein einfaches Event-Teilnahmesystem bereitstellt. Spieler können sich selbst für Event-Aktionen anmelden oder wieder austragen, während Administratoren alle registrierten Teilnehmer im Blick behalten.
 
 ## Voraussetzungen
 
 - Java 21 (getestet mit 21.0.8)
 - Gradle-Wrapper-Skripte (`gradlew` / `gradlew.bat` mit Gradle 8.10.2, enthalten das benötigte Wrapper-JAR)
-- Minecraft 1.21.1 Server mit NeoForge 21.1.209 (getestet auf ArcLight 1.0.2-SNAPSHOT-5857740)
+- Minecraft 1.21.1 Server mit ArcLight 1.0.2-SNAPSHOT-5857740 oder einem anderen Paper/Purpur/Pufferfish-basierten Server
 
 ## Kompilieren
 
@@ -14,33 +14,27 @@ Ein NeoForge-Mod für Minecraft 1.21.1, der ein einfaches Event-Teilnahmesystem 
 ./gradlew build
 ```
 
-Das Skript verwendet das im Repository enthaltene `gradle/wrapper/gradle-wrapper.jar` und lädt automatisch Gradle 8.10.2, bevor es einen normalen Gradle-Build ausführt. Die fertige, serverfähige Mod liegt anschließend unter `build/libs/behamotten-event-tools-<version>.jar` und kann direkt in den `mods/`-Ordner Ihres Servers kopiert werden.
+Das Skript verwendet das im Repository enthaltene `gradle/wrapper/gradle-wrapper.jar` und lädt automatisch Gradle 8.10.2, bevor es einen normalen Gradle-Build ausführt. Die fertige Plugin-JAR liegt anschließend unter `build/libs/behamotten-event-tools-<version>.jar` und kann direkt in den `plugins/`-Ordner Ihres Servers kopiert werden.
 
-## Entwicklermodus (optional)
+## Installation
 
-Der Build konfiguriert einen NeoForge-`server`-Run. Für lokale Tests kann der Server mit den Entwicklungsdaten gestartet werden:
-
-```bash
-./gradlew runServer
-```
-
-Der Server verwendet das Verzeichnis `run/server` innerhalb des Projekts. Standardmäßig wird ohne GUI gestartet.
+1. Die generierte JAR-Datei in den `plugins/`-Ordner legen.
+2. Server starten oder neu laden (`/reload` wird nicht empfohlen).
+3. Beim ersten Start legt das Plugin den Datenordner `plugins/BehamottenEventTools/` sowie die Datei `event_participants.yml` an.
 
 ## Verfügbare Befehle
 
 | Befehl | Berechtigung | Beschreibung |
 | ------ | ------------ | ------------ |
-| `/setEvents` | Alle Spieler | Fügt den ausführenden Spieler zur Eventliste hinzu. |
-| `/unsetEvents` | Alle Spieler | Entfernt den ausführenden Spieler aus der Eventliste. |
-| `/getAllEventUser` | Operator (Permission Level ≥ 2) | Listet alle registrierten Spieler auf. |
-| `/getAllEventUser @r` | Operator (Permission Level ≥ 2) | Gibt einen zufälligen registrierten Spieler zurück. |
-
-Alle Nachrichten werden im Spiel auf Englisch angezeigt (siehe `src/main/resources/assets/behamotten/lang/en_us.json`).
+| `/setevents` | `behamotten.setevents` (Standard: erlaubt) | Fügt den ausführenden Spieler zur Eventliste hinzu. |
+| `/unsetevents` | `behamotten.unsetevents` (Standard: erlaubt) | Entfernt den ausführenden Spieler aus der Eventliste. |
+| `/getalleventuser` | `behamotten.getall` (Standard: nur Operatoren) | Listet alle registrierten Spieler auf. |
+| `/getalleventuser @r` | `behamotten.getall` (Standard: nur Operatoren) | Gibt einen zufälligen registrierten Spieler zurück. |
 
 ## Datenpersistenz
 
-Die Liste der registrierten Spieler wird serverseitig gespeichert und über Neustarts hinweg beibehalten. Die Daten liegen in den Welt-Speicherdaten (`world/data/behamotten_event_participants.dat`).
+Die Liste der registrierten Spieler wird im Plugin-Datenordner (`plugins/BehamottenEventTools/event_participants.yml`) gespeichert und über Neustarts hinweg beibehalten.
 
 ## Lizenz
 
-Dieses Projekt verwendet die MIT-Lizenz. Eine Kopie befindet sich in der Mod-Datei (`mods.toml`).
+Dieses Projekt verwendet die MIT-Lizenz. Eine Kopie befindet sich in der Datei `LICENSE`.
