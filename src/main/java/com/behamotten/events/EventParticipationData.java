@@ -1,5 +1,8 @@
 package com.behamotten.events;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -7,54 +10,46 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.logging.Level;
 
-import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.Tag;
-import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.level.saveddata.SavedData;
+import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.configuration.file.FileConfiguration;
+import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.entity.Player;
+import org.bukkit.plugin.java.JavaPlugin;
 
 /**
  * Persistent storage for all event participants.
  */
-public final class EventParticipationData extends SavedData {
-    private static final String DATA_NAME = BehamottenEventsMod.MOD_ID + "_event_participants";
-    private static final String TAG_PLAYERS = "players";
-    private static final String TAG_UUID = "uuid";
-    private static final String TAG_NAME = "name";
+public final class EventParticipationData {
+    private static final String FILE_NAME = "event_participants.yml";
+    private static final String SECTION_PLAYERS = "players";
 
+    private final JavaPlugin plugin;
+    private final Path dataFile;
     private final Map<UUID, String> participants = new LinkedHashMap<>();
+    private boolean dirty;
 
-    public static EventParticipationData get(final MinecraftServer server) {
-        return server.overworld().getDataStorage().computeIfAbsent(EventParticipationData::load, EventParticipationData::new, DATA_NAME);
+    private EventParticipationData(final JavaPlugin plugin) {
+        this.plugin = plugin;
+        this.dataFile = plugin.getDataFolder().toPath().resolve(FILE_NAME);
+        load();
     }
 
-    private EventParticipationData() {
+    public static EventParticipationData load(final JavaPlugin plugin) {
+        return new EventParticipationData(plugin);
     }
 
-    private static EventParticipationData load(final CompoundTag tag) {
-        final EventParticipationData data = new EventParticipationData();
-        final ListTag playerList = tag.getList(TAG_PLAYERS, Tag.TAG_COMPOUND);
-        for (int i = 0; i < playerList.size(); i++) {
-            final CompoundTag entry = playerList.getCompound(i);
-            if (entry.hasUUID(TAG_UUID)) {
-                final UUID uuid = entry.getUUID(TAG_UUID);
-                final String name = entry.getString(TAG_NAME);
-                if (!name.isBlank()) {
-                    data.participants.put(uuid, name);
-                }
-            }
-        }
-        return data;
+    public int getParticipantCount() {
+        return participants.size();
     }
 
-    public boolean addParticipant(final ServerPlayer player) {
-        final UUID uuid = player.getUUID();
-        final String name = player.getGameProfile().getName();
+    public boolean addParticipant(final Player player) {
+        final UUID uuid = player.getUniqueId();
+        final String name = player.getName();
         final String previous = participants.put(uuid, name);
         if (previous == null || !previous.equals(name)) {
-            setDirty();
+            markDirty();
             return previous == null;
         }
         return false;
@@ -63,7 +58,7 @@ public final class EventParticipationData extends SavedData {
     public boolean removeParticipant(final UUID uuid) {
         final String removed = participants.remove(uuid);
         if (removed != null) {
-            setDirty();
+            markDirty();
             return true;
         }
         return false;
@@ -86,16 +81,54 @@ public final class EventParticipationData extends SavedData {
         return Optional.of(names.get(index));
     }
 
-    @Override
-    public CompoundTag save(final CompoundTag tag) {
-        final ListTag list = new ListTag();
-        for (final Map.Entry<UUID, String> entry : participants.entrySet()) {
-            final CompoundTag playerTag = new CompoundTag();
-            playerTag.putUUID(TAG_UUID, entry.getKey());
-            playerTag.putString(TAG_NAME, entry.getValue());
-            list.add(playerTag);
+    public void save() {
+        if (!dirty && Files.exists(dataFile)) {
+            return;
         }
-        tag.put(TAG_PLAYERS, list);
-        return tag;
+
+        try {
+            Files.createDirectories(dataFile.getParent());
+            final YamlConfiguration configuration = new YamlConfiguration();
+            final Map<String, Object> serialized = new LinkedHashMap<>();
+            for (final Map.Entry<UUID, String> entry : participants.entrySet()) {
+                serialized.put(entry.getKey().toString(), entry.getValue());
+            }
+            configuration.createSection(SECTION_PLAYERS, serialized);
+            configuration.save(dataFile.toFile());
+            dirty = false;
+        } catch (final IOException exception) {
+            plugin.getLogger().log(Level.SEVERE, "Konnte Event-Teilnehmer nicht speichern.", exception);
+        }
+    }
+
+    private void load() {
+        participants.clear();
+        if (!Files.exists(dataFile)) {
+            dirty = false;
+            return;
+        }
+
+        final FileConfiguration configuration = YamlConfiguration.loadConfiguration(dataFile.toFile());
+        final ConfigurationSection section = configuration.getConfigurationSection(SECTION_PLAYERS);
+        if (section != null) {
+            for (final String key : section.getKeys(false)) {
+                final String name = section.getString(key);
+                if (name == null || name.isBlank()) {
+                    continue;
+                }
+                try {
+                    final UUID uuid = UUID.fromString(key);
+                    participants.put(uuid, name);
+                } catch (final IllegalArgumentException exception) {
+                    plugin.getLogger().log(Level.WARNING, "Ungültige UUID in der Teilnehmerdatei: " + key, exception);
+                }
+            }
+        }
+        dirty = false;
+    }
+
+    private void markDirty() {
+        dirty = true;
+        save();
     }
 }
