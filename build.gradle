@@ -1,3 +1,5 @@
+import org.gradle.api.JavaVersion
+
 plugins {
     id 'java'
 }
@@ -5,9 +7,35 @@ plugins {
 version = '0.1.0'
 group = 'com.behamotten'
 
-java {
-    toolchain.languageVersion = JavaLanguageVersion.of(21)
-    withSourcesJar()
+def javaExtension = extensions.findByName('java')
+if (javaExtension != null) {
+    Class<?> javaLanguageVersionClass = null
+    try {
+        javaLanguageVersionClass = Class.forName('org.gradle.jvm.toolchain.JavaLanguageVersion')
+    } catch (ClassNotFoundException ignored) {
+        // Gradle versions without toolchain support do not ship this class
+    }
+
+    if (javaLanguageVersionClass != null && javaExtension.metaClass.respondsTo(javaExtension, 'toolchain', Closure)) {
+        javaExtension.toolchain { spec ->
+            spec.languageVersion = javaLanguageVersionClass.getMethod('of', Integer.TYPE).invoke(null, 21)
+        }
+    } else {
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
+    }
+
+    if (javaExtension.metaClass.respondsTo(javaExtension, 'withSourcesJar')) {
+        javaExtension.withSourcesJar()
+    } else {
+        tasks.register('sourcesJar', Jar) {
+            archiveClassifier = 'sources'
+            from sourceSets.main.allSource
+        }
+        artifacts {
+            archives tasks.named('sourcesJar')
+        }
+    }
 }
 
 repositories {
