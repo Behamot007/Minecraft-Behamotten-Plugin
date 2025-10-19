@@ -13,8 +13,8 @@ public class CompoundTag {
 
     public ListTag getList(final String key, final int type) {
         final Object value = values.get(key);
-        if (value instanceof ListTag list) {
-            return list;
+        if (value instanceof ListTag) {
+            return (ListTag) value;
         }
         return new ListTag();
     }
@@ -25,16 +25,16 @@ public class CompoundTag {
 
     public UUID getUUID(final String key) {
         final Object value = values.get(key);
-        if (value instanceof UUID uuid) {
-            return uuid;
+        if (value instanceof UUID) {
+            return (UUID) value;
         }
         throw new IllegalStateException("No UUID stored under key " + key);
     }
 
     public String getString(final String key) {
         final Object value = values.get(key);
-        if (value instanceof String string) {
-            return string;
+        if (value instanceof String) {
+            return (String) value;
         }
         return "";
     }
