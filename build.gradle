@@ -79,7 +79,7 @@ if (javaCompileTasks.metaClass.respondsTo(javaCompileTasks, 'configureEach', Clo
     }
 }
 
-tasks.named('jar', Jar) { jarTask ->
+def configureJarTask = { Jar jarTask ->
     if (jarTask.metaClass.respondsTo(jarTask, 'setArchiveBaseName', String)) {
         jarTask.setArchiveBaseName('behamotten-event-tools')
     } else if (jarTask.metaClass.hasProperty(jarTask, 'archiveBaseName')) {
@@ -93,7 +93,7 @@ tasks.named('jar', Jar) { jarTask ->
         jarTask.baseName = 'behamotten-event-tools'
     }
 
-    manifest {
+    jarTask.manifest {
         attributes(
             'Specification-Title': 'Behamotten Event Tools',
             'Specification-Vendor': 'Behamotten',
@@ -102,5 +102,53 @@ tasks.named('jar', Jar) { jarTask ->
             'Implementation-Version': project.version,
             'Implementation-Vendor': 'Behamotten'
         )
+    }
+}
+
+boolean jarConfigured = false
+
+if (taskContainer.metaClass.respondsTo(taskContainer, 'named', String, Class)) {
+    def jarTaskProvider = taskContainer.named('jar', Jar)
+    if (jarTaskProvider.metaClass.respondsTo(jarTaskProvider, 'configure', Closure)) {
+        jarTaskProvider.configure(configureJarTask)
+        jarConfigured = true
+    } else if (jarTaskProvider.metaClass.respondsTo(jarTaskProvider, 'get')) {
+        configureJarTask.call(jarTaskProvider.get())
+        jarConfigured = true
+    }
+}
+
+if (!jarConfigured && taskContainer.metaClass.respondsTo(taskContainer, 'named', Object[])) {
+    try {
+        def jarTaskProvider = taskContainer.named('jar')
+        if (jarTaskProvider != null) {
+            if (jarTaskProvider.metaClass.respondsTo(jarTaskProvider, 'configure', Closure)) {
+                jarTaskProvider.configure(configureJarTask)
+                jarConfigured = true
+            } else if (jarTaskProvider.metaClass.respondsTo(jarTaskProvider, 'get')) {
+                def jarTask = jarTaskProvider.get()
+                if (jarTask instanceof Jar) {
+                    configureJarTask.call(jarTask)
+                    jarConfigured = true
+                }
+            }
+        }
+    } catch (MissingMethodException ignored) {
+        // Older Gradle versions may not support this overload
+    }
+}
+
+if (!jarConfigured && taskContainer.metaClass.respondsTo(taskContainer, 'getByName', String, Closure)) {
+    taskContainer.getByName('jar') { Jar jarTask ->
+        configureJarTask.call(jarTask)
+    }
+    jarConfigured = true
+}
+
+if (!jarConfigured) {
+    def jarTask = taskContainer.getByName('jar')
+    if (jarTask instanceof Jar) {
+        configureJarTask.call(jarTask)
+        jarConfigured = true
     }
 }
