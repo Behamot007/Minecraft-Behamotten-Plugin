@@ -100,8 +100,8 @@ dependencies {
     compileOnly sourceSets.stubs.output
 }
 
-tasks.named('compileJava').configure {
-    dependsOn(tasks.named('compileStubsJava'))
+tasks.getByName('compileJava') {
+    dependsOn 'compileStubsJava'
 }
 
 tasks.withType(JavaCompile).configureEach {
