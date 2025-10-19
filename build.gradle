@@ -55,8 +55,13 @@ dependencies {
     compileOnly sourceSets.stubs.output
 }
 
-tasks.named('compileJava') {
-    dependsOn 'compileStubsJava'
+def taskContainer = tasks
+if (taskContainer.metaClass.respondsTo(taskContainer, 'named', Object[])) {
+    taskContainer.named('compileJava') {
+        dependsOn 'compileStubsJava'
+    }
+} else {
+    taskContainer.getByName('compileJava').dependsOn 'compileStubsJava'
 }
 
 tasks.withType(JavaCompile).configureEach {
