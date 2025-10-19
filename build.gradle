@@ -79,8 +79,20 @@ if (javaCompileTasks.metaClass.respondsTo(javaCompileTasks, 'configureEach', Clo
     }
 }
 
-jar {
-    archiveBaseName.set('behamotten-event-tools')
+tasks.named('jar', Jar) { jarTask ->
+    if (jarTask.metaClass.respondsTo(jarTask, 'setArchiveBaseName', String)) {
+        jarTask.setArchiveBaseName('behamotten-event-tools')
+    } else if (jarTask.metaClass.hasProperty(jarTask, 'archiveBaseName')) {
+        def archiveBaseNameProperty = jarTask.archiveBaseName
+        if (archiveBaseNameProperty != null && archiveBaseNameProperty.metaClass.respondsTo(archiveBaseNameProperty, 'set', Object)) {
+            archiveBaseNameProperty.set('behamotten-event-tools')
+        } else {
+            jarTask.archiveBaseName = 'behamotten-event-tools'
+        }
+    } else if (jarTask.metaClass.hasProperty(jarTask, 'baseName')) {
+        jarTask.baseName = 'behamotten-event-tools'
+    }
+
     manifest {
         attributes(
             'Specification-Title': 'Behamotten Event Tools',
