@@ -126,6 +126,12 @@ if (javaCompileTasks.metaClass.respondsTo(javaCompileTasks, 'configureEach', Clo
         if (options.metaClass.respondsTo(options, 'setRelease', Object)) {
             options.release = 21
         }
+        if (metaClass.respondsTo(delegate, 'setSourceCompatibility', Object)) {
+            sourceCompatibility = JavaVersion.VERSION_21.toString()
+        }
+        if (metaClass.respondsTo(delegate, 'setTargetCompatibility', Object)) {
+            targetCompatibility = JavaVersion.VERSION_21.toString()
+        }
     }
 } else if (javaCompileTasks.metaClass.respondsTo(javaCompileTasks, 'all', Closure)) {
     javaCompileTasks.all {
