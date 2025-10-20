@@ -44,24 +44,24 @@ public final class EventParticipationData {
         return participants.size();
     }
 
-    public boolean addParticipant(final Player player) {
+    public ParticipationUpdate addParticipant(final Player player) {
         final UUID uuid = player.getUniqueId();
         final String name = player.getName();
         final String previous = participants.put(uuid, name);
         if (previous == null || !previous.equals(name)) {
-            markDirty();
-            return previous == null;
+            final boolean persisted = markDirty();
+            return new ParticipationUpdate(previous == null, persisted);
         }
-        return false;
+        return new ParticipationUpdate(false, true);
     }
 
-    public boolean removeParticipant(final UUID uuid) {
+    public ParticipationUpdate removeParticipant(final UUID uuid) {
         final String removed = participants.remove(uuid);
         if (removed != null) {
-            markDirty();
-            return true;
+            final boolean persisted = markDirty();
+            return new ParticipationUpdate(true, persisted);
         }
-        return false;
+        return new ParticipationUpdate(false, true);
     }
 
     public boolean isParticipant(final UUID uuid) {
@@ -81,9 +81,9 @@ public final class EventParticipationData {
         return Optional.of(names.get(index));
     }
 
-    public void save() {
+    public boolean save() {
         if (!dirty && Files.exists(dataFile)) {
-            return;
+            return true;
         }
 
         try {
@@ -99,9 +99,13 @@ public final class EventParticipationData {
             configuration.createSection(SECTION_PLAYERS, serialized);
             configuration.save(dataFile.toFile());
             dirty = false;
+            return true;
         } catch (final IOException exception) {
             plugin.getLogger().log(Level.SEVERE, "Konnte Event-Teilnehmer nicht speichern.", exception);
+        } catch (final RuntimeException exception) {
+            plugin.getLogger().log(Level.SEVERE, "Unerwarteter Fehler beim Speichern der Event-Teilnehmer.", exception);
         }
+        return false;
     }
 
     private void load() {
@@ -130,8 +134,22 @@ public final class EventParticipationData {
         dirty = false;
     }
 
-    private void markDirty() {
+    private boolean markDirty() {
         dirty = true;
-        save();
+        return save();
+    }
+
+    /**
+     * Result of a participation update operation.
+     */
+    public record ParticipationUpdate(boolean changed, boolean persisted) {
+
+        public boolean wasChanged() {
+            return changed;
+        }
+
+        public boolean wasPersisted() {
+            return persisted;
+        }
     }
 }

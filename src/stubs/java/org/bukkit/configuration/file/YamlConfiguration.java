@@ -16,6 +16,9 @@ public class YamlConfiguration extends FileConfiguration {
     }
 
     public void save(final File file) throws IOException {
+        if (Boolean.getBoolean("behamotten.test.failSave")) {
+            throw new IllegalStateException("Simulated save failure");
+        }
         // no-op stub
     }
 }
