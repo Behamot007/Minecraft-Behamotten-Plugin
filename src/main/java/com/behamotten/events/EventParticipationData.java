@@ -92,11 +92,9 @@ public final class EventParticipationData {
                 Files.createDirectories(parent);
             }
             final YamlConfiguration configuration = new YamlConfiguration();
-            final Map<String, Object> serialized = new LinkedHashMap<>();
-            for (final Map.Entry<UUID, String> entry : participants.entrySet()) {
-                serialized.put(entry.getKey().toString(), entry.getValue());
+            if (!populatePlayersSection(configuration)) {
+                return false;
             }
-            configuration.createSection(SECTION_PLAYERS, serialized);
             configuration.save(dataFile.toFile());
             dirty = false;
             return true;
@@ -137,6 +135,87 @@ public final class EventParticipationData {
     private boolean markDirty() {
         dirty = true;
         return save();
+    }
+
+    private boolean populatePlayersSection(final YamlConfiguration configuration) {
+        final Map<String, Object> serialized = new LinkedHashMap<>();
+        for (final Map.Entry<UUID, String> entry : participants.entrySet()) {
+            serialized.put(entry.getKey().toString(), entry.getValue());
+        }
+
+        if (tryCreateSectionWithMap(configuration, serialized)) {
+            return true;
+        }
+        if (tryCreateSectionWithSetter(configuration, serialized)) {
+            return true;
+        }
+        if (trySetValuesDirectly(configuration, serialized)) {
+            return true;
+        }
+
+        plugin.getLogger().log(Level.SEVERE,
+            "Inkompatible Bukkit-Version: Konnte Teilnehmerliste nicht speichern.");
+        return false;
+    }
+
+    private boolean tryCreateSectionWithMap(final YamlConfiguration configuration,
+        final Map<String, Object> serialized) {
+        try {
+            configuration.getClass()
+                .getMethod("createSection", String.class, Map.class)
+                .invoke(configuration, SECTION_PLAYERS, serialized);
+            return true;
+        } catch (final NoSuchMethodException exception) {
+            return false;
+        } catch (final ReflectiveOperationException exception) {
+            plugin.getLogger().log(Level.SEVERE,
+                "Fehler beim Erstellen der Teilnehmersektion per Map.", exception);
+            return false;
+        }
+    }
+
+    private boolean tryCreateSectionWithSetter(final YamlConfiguration configuration,
+        final Map<String, Object> serialized) {
+        try {
+            final Object section = configuration.getClass()
+                .getMethod("createSection", String.class)
+                .invoke(configuration, SECTION_PLAYERS);
+            final Class<?> sectionClass = section.getClass();
+            final java.lang.reflect.Method setMethod = sectionClass
+                .getMethod("set", String.class, Object.class);
+            for (final Map.Entry<String, Object> entry : serialized.entrySet()) {
+                setMethod.invoke(section, entry.getKey(), entry.getValue());
+            }
+            return true;
+        } catch (final NoSuchMethodException exception) {
+            return false;
+        } catch (final ReflectiveOperationException exception) {
+            plugin.getLogger().log(Level.SEVERE,
+                "Fehler beim Erstellen der Teilnehmersektion per Setter.", exception);
+            return false;
+        }
+    }
+
+    private boolean trySetValuesDirectly(final YamlConfiguration configuration,
+        final Map<String, Object> serialized) {
+        try {
+            final java.lang.reflect.Method setMethod = configuration.getClass()
+                .getMethod("set", String.class, Object.class);
+            if (serialized.isEmpty()) {
+                setMethod.invoke(configuration, SECTION_PLAYERS, new LinkedHashMap<>());
+            } else {
+                for (final Map.Entry<String, Object> entry : serialized.entrySet()) {
+                    setMethod.invoke(configuration, SECTION_PLAYERS + "." + entry.getKey(), entry.getValue());
+                }
+            }
+            return true;
+        } catch (final NoSuchMethodException exception) {
+            return false;
+        } catch (final ReflectiveOperationException exception) {
+            plugin.getLogger().log(Level.SEVERE,
+                "Fehler beim direkten Setzen der Teilnehmerwerte.", exception);
+            return false;
+        }
     }
 
     /**
