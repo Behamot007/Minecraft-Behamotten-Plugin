@@ -41,6 +41,12 @@ final class EventCommandRegistrarTest {
 
         final TestEnvironment invalidSelectorEnv = createEnvironment();
         invalidSelectorShowsError(invalidSelectorEnv.registrar());
+
+        final TestEnvironment saveFailureEnv = createEnvironment();
+        setEventsWarnsWhenSaveFails(saveFailureEnv.registrar());
+
+        final TestEnvironment unsetSaveFailureEnv = createEnvironment();
+        unsetEventsWarnsWhenSaveFails(unsetSaveFailureEnv.participationData(), unsetSaveFailureEnv.registrar());
     }
 
     private void setEventsRegistersPlayer(
@@ -163,6 +169,59 @@ final class EventCommandRegistrarTest {
                 ChatColor.RED + "Unbekannter Selektor '@a'. Verwende @r für eine zufällige Auswahl.");
     }
 
+    private void setEventsWarnsWhenSaveFails(final EventCommandRegistrar registrar) {
+        final TestPlayer player = new TestPlayer("Tester");
+        final String property = "behamotten.test.failSave";
+        final String previousValue = System.getProperty(property);
+        System.setProperty(property, "true");
+        try {
+            final boolean handled = registrar.onCommand(player, new Command("setevents"), "setevents", new String[0]);
+
+            if (!handled) {
+                throw new AssertionError("Expected command to be handled");
+            }
+            assertMessages(
+                    player.messages,
+                    ChatColor.GREEN + "Du bist jetzt für Events registriert.",
+                    ChatColor.RED
+                            + "Achtung: Die Teilnehmerdaten konnten nicht gespeichert werden. Bitte informiere einen Administrator.");
+        } finally {
+            restoreProperty(property, previousValue);
+        }
+    }
+
+    private void unsetEventsWarnsWhenSaveFails(
+            final EventParticipationData participationData, final EventCommandRegistrar registrar) {
+        final TestPlayer player = new TestPlayer("Tester");
+        participationData.addParticipant(player);
+
+        final String property = "behamotten.test.failSave";
+        final String previousValue = System.getProperty(property);
+        System.setProperty(property, "true");
+        try {
+            final boolean handled = registrar.onCommand(player, new Command("unsetevents"), "unsetevents", new String[0]);
+
+            if (!handled) {
+                throw new AssertionError("Expected command to be handled");
+            }
+            assertMessages(
+                    player.messages,
+                    ChatColor.GREEN + "Du wurdest von den Event-Teilnehmern entfernt.",
+                    ChatColor.RED
+                            + "Achtung: Die Teilnehmerdaten konnten nicht gespeichert werden. Bitte informiere einen Administrator.");
+        } finally {
+            restoreProperty(property, previousValue);
+        }
+    }
+
+    private void restoreProperty(final String key, final String previousValue) {
+        if (previousValue == null) {
+            System.clearProperty(key);
+        } else {
+            System.setProperty(key, previousValue);
+        }
+    }
+
     private TestEnvironment createEnvironment() {
         try {
             final Path directory = Files.createTempDirectory("behamotten-plugin-test");
@@ -202,13 +261,22 @@ final class EventCommandRegistrarTest {
         }
     }
 
-    private void assertMessages(final List<String> actual, final String expected) {
-        if (actual.size() != 1) {
-            throw new AssertionError("Expected exactly one message but got " + actual.size());
-        }
-        if (!expected.equals(actual.get(0))) {
+    private void assertMessages(final List<String> actual, final String... expected) {
+        if (actual.size() != expected.length) {
             throw new AssertionError(
-                    "Unexpected message. Expected '" + expected + "' but got '" + actual.get(0) + "'");
+                    "Expected exactly " + expected.length + " message(s) but got " + actual.size());
+        }
+        for (int i = 0; i < expected.length; i++) {
+            if (!expected[i].equals(actual.get(i))) {
+                throw new AssertionError(
+                        "Unexpected message at index "
+                                + i
+                                + ". Expected '"
+                                + expected[i]
+                                + "' but got '"
+                                + actual.get(i)
+                                + "'");
+            }
         }
     }
 

@@ -65,12 +65,13 @@ public final class EventCommandRegistrar implements CommandExecutor, TabComplete
             return true;
         }
         final Player player = (Player) sender;
-        final boolean added = participationData.addParticipant(player);
-        if (added) {
+        final EventParticipationData.ParticipationUpdate update = participationData.addParticipant(player);
+        if (update.wasChanged()) {
             sender.sendMessage(ChatColor.GREEN + "Du bist jetzt für Events registriert.");
         } else {
             sender.sendMessage(ChatColor.YELLOW + "Du warst bereits für Events registriert.");
         }
+        warnOnPersistenceFailure(sender, update);
         return true;
     }
 
@@ -80,12 +81,14 @@ public final class EventCommandRegistrar implements CommandExecutor, TabComplete
             return true;
         }
         final Player player = (Player) sender;
-        final boolean removed = participationData.removeParticipant(player.getUniqueId());
-        if (removed) {
+        final EventParticipationData.ParticipationUpdate update =
+                participationData.removeParticipant(player.getUniqueId());
+        if (update.wasChanged()) {
             sender.sendMessage(ChatColor.GREEN + "Du wurdest von den Event-Teilnehmern entfernt.");
         } else {
             sender.sendMessage(ChatColor.YELLOW + "Du warst nicht für Events registriert.");
         }
+        warnOnPersistenceFailure(sender, update);
         return true;
     }
 
@@ -117,6 +120,14 @@ public final class EventCommandRegistrar implements CommandExecutor, TabComplete
         }
 
         return true;
+    }
+
+    private void warnOnPersistenceFailure(
+            final CommandSender sender, final EventParticipationData.ParticipationUpdate update) {
+        if (!update.wasPersisted()) {
+            sender.sendMessage(ChatColor.RED
+                    + "Achtung: Die Teilnehmerdaten konnten nicht gespeichert werden. Bitte informiere einen Administrator.");
+        }
     }
 
     @Override

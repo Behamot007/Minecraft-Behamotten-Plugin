@@ -18,9 +18,12 @@ final class EventParticipationDataTest {
         final Player player = new TestPlayer(UUID.randomUUID(), "UnitTester");
 
         try {
-            final boolean added = data.addParticipant(player);
-            if (!added) {
+            final EventParticipationData.ParticipationUpdate update = data.addParticipant(player);
+            if (!update.wasChanged()) {
                 throw new AssertionError("Expected player to be newly added");
+            }
+            if (!update.wasPersisted()) {
+                throw new AssertionError("Expected participant data to persist successfully");
             }
         } catch (final RuntimeException exception) {
             throw new AssertionError("addParticipant should not throw when data folder has no parent", exception);
