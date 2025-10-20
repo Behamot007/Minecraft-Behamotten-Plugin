@@ -142,7 +142,14 @@ public final class EventParticipationData {
     /**
      * Result of a participation update operation.
      */
-    public record ParticipationUpdate(boolean changed, boolean persisted) {
+    public static final class ParticipationUpdate {
+        private final boolean changed;
+        private final boolean persisted;
+
+        public ParticipationUpdate(final boolean changed, final boolean persisted) {
+            this.changed = changed;
+            this.persisted = persisted;
+        }
 
         public boolean wasChanged() {
             return changed;
@@ -150,6 +157,33 @@ public final class EventParticipationData {
 
         public boolean wasPersisted() {
             return persisted;
+        }
+
+        @Override
+        public boolean equals(final Object other) {
+            if (this == other) {
+                return true;
+            }
+            if (!(other instanceof ParticipationUpdate)) {
+                return false;
+            }
+            final ParticipationUpdate that = (ParticipationUpdate) other;
+            return changed == that.changed && persisted == that.persisted;
+        }
+
+        @Override
+        public int hashCode() {
+            int result = changed ? 1 : 0;
+            result = 31 * result + (persisted ? 1 : 0);
+            return result;
+        }
+
+        @Override
+        public String toString() {
+            return "ParticipationUpdate{" +
+                    "changed=" + changed +
+                    ", persisted=" + persisted +
+                    '}';
         }
     }
 }
