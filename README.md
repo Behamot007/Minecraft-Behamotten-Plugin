@@ -35,6 +35,133 @@ Das Skript verwendet das im Repository enthaltene `gradle/wrapper/gradle-wrapper
 
 Die Liste der registrierten Spieler wird im Plugin-Datenordner (`plugins/BehamottenEventTools/event_participants.yml`) gespeichert und über Neustarts hinweg beibehalten.
 
+## Fortschritts-Export (JSON)
+
+Zusätzlich zum Event-Teilnahmestatus exportiert das Plugin strukturierte JSON-Dateien, die sich für externe Auswertungen eignen. Die Dateien werden lokal im Plugin-Datenordner erzeugt – es erfolgt **kein Versand an externe APIs oder Dienste**.
+
+### Speicherort
+
+- **Master-Datei**: `plugins/BehamottenEventTools/progress_master.json`
+- **Spielerdateien**: `plugins/BehamottenEventTools/progress_players/<uuid>.json`
+- **Änderungsprotokoll**: `plugins/BehamottenEventTools/progress_player_updates.log`
+- **(Optional) Quest-Definitionen**: `plugins/BehamottenEventTools/ftbquests_definitions.json`
+
+Beim ersten Serverstart erzeugt das Plugin automatisch die Master-Datei aus allen bekannten Advancements und (optional) Quest-Definitionen und fixiert sie anschließend. Danach wird diese Datei nicht mehr verändert. Spielerabschlüsse werden für **alle** Spieler kontinuierlich aufgezeichnet. Jede Änderung führt zu einer Aktualisierung der jeweiligen Spielerdatei und zu einem neuen Eintrag im Änderungsprotokoll. Beim Herunterfahren (`onDisable`) wird ein abschließender Schreibvorgang für noch offene Spieler durchgeführt.
+
+### Struktur der Master-Datei (`progress_master.json`)
+
+```jsonc
+{
+  "generatedAt": "2024-11-10T17:32:11.235Z",
+  "entries": [
+    {
+      "id": "minecraft:story/root",
+      "type": "ADVANCEMENT", // oder "QUEST"
+      "name": "Das Abenteuer beginnt",
+      "description": "Betritt die Welt",
+      "parentId": "minecraft:story/mine_stone",
+      "icon": "minecraft:crafting_table",
+      "attributes": {
+        "announceToChat": true,
+        "frame": "TASK",
+        "chapter": "Main Quests" // optional, z. B. aus FTB-Quests
+      },
+      "criteria": [
+        "crafted_table"
+      ]
+    }
+  ]
+}
+```
+
+| Feld | Typ | Beschreibung |
+| ---- | --- | ------------- |
+| `generatedAt` | ISO-8601-Zeitstempel | Zeitpunkt, zu dem die Datei erstellt wurde. |
+| `entries` | Array | Liste aller bekannten Achievements/Quests. |
+| `entries[].id` | String | Eindeutige Kennung (`namespace:path` für Advancements, frei wählbar für Quests). |
+| `entries[].type` | String | `ADVANCEMENT` oder `QUEST`. |
+| `entries[].name` | String, optional | Titel des Eintrags. |
+| `entries[].description` | String, optional | Beschreibung des Eintrags. |
+| `entries[].parentId` | String, optional | Übergeordnete Achievement-ID (falls vorhanden). |
+| `entries[].icon` | String, optional | Zeichenkettenrepräsentation des Icons (Item-Namensraum). |
+| `entries[].attributes` | Objekt, optional | Zusätzliche Merkmale (Anzeigeoptionen, Quest-Metadaten usw.). |
+| `entries[].criteria` | Array<String> | Liste aller Kriterien/Tasks, die für diesen Eintrag existieren. |
+
+### Struktur einer Spielerdatei (`progress_players/<uuid>.json`)
+
+```jsonc
+{
+  "playerId": "c0ffee00-4b1d-4ead-babe-001122334455",
+  "lastKnownName": "Spieler123", // optional
+  "exportedAt": "2024-11-10T17:33:02.017Z",
+  "completions": [
+    {
+      "entryId": "minecraft:story/root",
+      "type": "ADVANCEMENT",
+      "completedAt": "2024-11-02T19:45:12.901Z",
+      "completedCriteria": [
+        "crafted_table"
+      ],
+      "details": {
+        "source": "advancement",
+        "world": "world"
+      }
+    }
+  ]
+}
+```
+
+| Feld | Typ | Beschreibung |
+| ---- | --- | ------------- |
+| `playerId` | UUID als String | UUID des Spielers. |
+| `lastKnownName` | String, optional | Letzter bekannter Spielername. |
+| `exportedAt` | ISO-8601-Zeitstempel | Zeitpunkt des Dateiexports. |
+| `completions` | Array | Liste aller abgeschlossenen Einträge. |
+| `completions[].entryId` | String | Fremdschlüssel auf `entries[].id` der Master-Datei. |
+| `completions[].type` | String | `ADVANCEMENT` oder `QUEST`. |
+| `completions[].completedAt` | ISO-8601-Zeitstempel | Abschlusszeitpunkt. |
+| `completions[].completedCriteria` | Array<String>, optional | Erfüllte Kriterien/Tasks. |
+| `completions[].details` | Objekt, optional | Zusätzliche Metadaten (z. B. `source`, Weltname, Belohnungsinformationen). |
+
+### Struktur des Änderungsprotokolls (`progress_player_updates.log`)
+
+Das Änderungsprotokoll ist eine einfache JSON-Lines-Datei. Für jede gespeicherte Änderung wird eine Zeile mit folgenden Feldern angefügt:
+
+```json
+{"playerId":"c0ffee00-4b1d-4ead-babe-001122334455","updatedAt":"2024-11-10T17:33:02.017Z","lastKnownName":"Spieler123"}
+```
+
+- `playerId`: UUID des Spielers.
+- `updatedAt`: Zeitpunkt, zu dem die zugehörige Spielerdatei zuletzt geschrieben wurde.
+- `lastKnownName`: Optional, wenn ein Spielername bekannt ist.
+
+Über dieses Log lässt sich von extern leicht erkennen, welche Spieler-Dateien seit dem letzten Abgleich verändert wurden.
+
+### Import von FTB-Quests (`ftbquests_definitions.json`)
+
+Wird im Datenordner eine Datei mit folgender Struktur abgelegt, importiert das Plugin die Quest-Einträge beim Start und fügt sie der Master-Datei hinzu:
+
+```jsonc
+{
+  "quests": [
+    {
+      "id": "ftbquests:chapter1/quest3",
+      "name": "Technik-Stufe 1",
+      "description": "Schalte den Ofen frei",
+      "chapter": "Kapitel 1",
+      "icon": "minecraft:blast_furnace",
+      "attributes": {
+        "difficulty": "EASY"
+      },
+      "criteria": ["craft_blast_furnace"],
+      "tags": ["tech", "starter"]
+    }
+  ]
+}
+```
+
+Alle Felder sind optional, mit Ausnahme der Quest-`id`. Attribute und Tags werden unverändert in die Master-Datei übernommen. Die Zuordnung zu Spielerabschlüssen erfolgt ausschließlich über die `entryId` (Quest-ID).
+
 ## Lizenz
 
 Dieses Projekt verwendet die MIT-Lizenz. Eine Kopie befindet sich in der Datei `LICENSE`.
