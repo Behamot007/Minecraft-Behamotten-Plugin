@@ -43,9 +43,10 @@ Zusätzlich zum Event-Teilnahmestatus exportiert das Plugin strukturierte JSON-D
 
 - **Master-Datei**: `plugins/BehamottenEventTools/progress_master.json`
 - **Spielerdateien**: `plugins/BehamottenEventTools/progress_players/<uuid>.json`
+- **Änderungsprotokoll**: `plugins/BehamottenEventTools/progress_player_updates.log`
 - **(Optional) Quest-Definitionen**: `plugins/BehamottenEventTools/ftbquests_definitions.json`
 
-Die Master- und Spielerdateien werden bei Plugin-Start synchronisiert und nach jedem neuen Abschluss gespeichert. Beim Herunterfahren (`onDisable`) wird ein abschließender Schreibvorgang ausgeführt.
+Beim ersten Serverstart erzeugt das Plugin automatisch die Master-Datei aus allen bekannten Advancements und (optional) Quest-Definitionen und fixiert sie anschließend. Danach wird diese Datei nicht mehr verändert. Spielerabschlüsse werden für **alle** Spieler kontinuierlich aufgezeichnet. Jede Änderung führt zu einer Aktualisierung der jeweiligen Spielerdatei und zu einem neuen Eintrag im Änderungsprotokoll. Beim Herunterfahren (`onDisable`) wird ein abschließender Schreibvorgang für noch offene Spieler durchgeführt.
 
 ### Struktur der Master-Datei (`progress_master.json`)
 
@@ -75,7 +76,7 @@ Die Master- und Spielerdateien werden bei Plugin-Start synchronisiert und nach j
 
 | Feld | Typ | Beschreibung |
 | ---- | --- | ------------- |
-| `generatedAt` | ISO-8601-Zeitstempel | Zeitpunkt, zu dem die Datei zuletzt geschrieben wurde. |
+| `generatedAt` | ISO-8601-Zeitstempel | Zeitpunkt, zu dem die Datei erstellt wurde. |
 | `entries` | Array | Liste aller bekannten Achievements/Quests. |
 | `entries[].id` | String | Eindeutige Kennung (`namespace:path` für Advancements, frei wählbar für Quests). |
 | `entries[].type` | String | `ADVANCEMENT` oder `QUEST`. |
@@ -121,6 +122,20 @@ Die Master- und Spielerdateien werden bei Plugin-Start synchronisiert und nach j
 | `completions[].completedAt` | ISO-8601-Zeitstempel | Abschlusszeitpunkt. |
 | `completions[].completedCriteria` | Array<String>, optional | Erfüllte Kriterien/Tasks. |
 | `completions[].details` | Objekt, optional | Zusätzliche Metadaten (z. B. `source`, Weltname, Belohnungsinformationen). |
+
+### Struktur des Änderungsprotokolls (`progress_player_updates.log`)
+
+Das Änderungsprotokoll ist eine einfache JSON-Lines-Datei. Für jede gespeicherte Änderung wird eine Zeile mit folgenden Feldern angefügt:
+
+```json
+{"playerId":"c0ffee00-4b1d-4ead-babe-001122334455","updatedAt":"2024-11-10T17:33:02.017Z","lastKnownName":"Spieler123"}
+```
+
+- `playerId`: UUID des Spielers.
+- `updatedAt`: Zeitpunkt, zu dem die zugehörige Spielerdatei zuletzt geschrieben wurde.
+- `lastKnownName`: Optional, wenn ein Spielername bekannt ist.
+
+Über dieses Log lässt sich von extern leicht erkennen, welche Spieler-Dateien seit dem letzten Abgleich verändert wurden.
 
 ### Import von FTB-Quests (`ftbquests_definitions.json`)
 

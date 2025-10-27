@@ -23,6 +23,7 @@ public final class BehamottenEventsPlugin extends JavaPlugin {
         registerProgressListeners();
         synchronizeAdvancements();
         importQuestDefinitions();
+        finalizeProgressMaster();
     }
 
     @Override
@@ -61,5 +62,12 @@ public final class BehamottenEventsPlugin extends JavaPlugin {
         if (imported > 0) {
             getLogger().info(() -> "Imported " + imported + " quest definitions for progress exports.");
         }
+    }
+
+    private void finalizeProgressMaster() {
+        if (progressDataManager == null) {
+            return;
+        }
+        progressDataManager.finalizeMasterExport();
     }
 }

@@ -37,16 +37,19 @@ public final class ProgressDataManager {
     private static final String MASTER_FILE_NAME = "progress_master.json";
     private static final String PLAYERS_DIRECTORY_NAME = "progress_players";
     private static final String QUEST_DEFINITIONS_FILE_NAME = "ftbquests_definitions.json";
+    private static final String PLAYER_UPDATE_LOG_FILE_NAME = "progress_player_updates.log";
 
     private final JavaPlugin plugin;
     private final Path masterFile;
     private final Path playersDirectory;
     private final Path questDefinitionsFile;
+    private final Path playerUpdateLogFile;
 
     private final Map<String, MasterEntry> masterEntries = new LinkedHashMap<>();
     private final Map<UUID, PlayerProgress> playerProgress = new LinkedHashMap<>();
     private final Set<UUID> dirtyPlayers = new HashSet<>();
     private boolean masterDirty;
+    private boolean masterFileLocked;
 
     private ProgressDataManager(final JavaPlugin plugin) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
@@ -54,6 +57,8 @@ public final class ProgressDataManager {
         this.masterFile = dataFolder.resolve(MASTER_FILE_NAME);
         this.playersDirectory = dataFolder.resolve(PLAYERS_DIRECTORY_NAME);
         this.questDefinitionsFile = dataFolder.resolve(QUEST_DEFINITIONS_FILE_NAME);
+        this.playerUpdateLogFile = dataFolder.resolve(PLAYER_UPDATE_LOG_FILE_NAME);
+        this.masterFileLocked = Files.exists(masterFile);
         loadMasterFile();
     }
 
@@ -83,7 +88,6 @@ public final class ProgressDataManager {
                 processed++;
             }
         }
-        saveMasterIfDirty();
         return processed;
     }
 
@@ -135,13 +139,16 @@ public final class ProgressDataManager {
                     }
                 }
             }
-            saveMasterIfDirty();
             return imported;
         } catch (final IOException | SimpleJson.JsonException exception) {
             plugin.getLogger().log(Level.SEVERE,
                     "Konnte Quest-Definitionen nicht laden: " + definitionFile, exception);
             return 0;
         }
+    }
+
+    public void finalizeMasterExport() {
+        saveMasterIfDirty();
     }
 
     public void recordAdvancementCompletion(final Player player, final Advancement advancement) {
@@ -275,10 +282,18 @@ public final class ProgressDataManager {
         }
         final MasterEntry normalized = entry.normalize();
         final MasterEntry existing = masterEntries.get(normalized.getId());
+        if (masterFileLocked) {
+            if (existing == null) {
+                plugin.getLogger().log(Level.WARNING,
+                        "Neuer Master-Eintrag '" + normalized.getId()
+                                + "' wurde ignoriert, da die Master-Datei bereits fixiert ist.");
+                return null;
+            }
+            return existing;
+        }
         if (!normalized.equals(existing)) {
             masterEntries.put(normalized.getId(), normalized);
             masterDirty = true;
-            saveMasterIfDirty();
         }
         return masterEntries.get(normalized.getId());
     }
@@ -432,7 +447,8 @@ public final class ProgressDataManager {
     }
 
     private void saveMasterIfDirty() {
-        if (!masterDirty && Files.exists(masterFile)) {
+        if (masterFileLocked || !masterDirty) {
+            masterDirty = false;
             return;
         }
         try {
@@ -451,6 +467,7 @@ public final class ProgressDataManager {
                 writer.write(System.lineSeparator());
             }
             masterDirty = false;
+            masterFileLocked = true;
         } catch (final IOException | RuntimeException exception) {
             plugin.getLogger().log(Level.SEVERE, "Konnte Master-Datei nicht speichern.", exception);
         }
@@ -459,12 +476,13 @@ public final class ProgressDataManager {
     private void savePlayerProgress(final UUID playerId, final PlayerProgress progress) {
         try {
             ensureDataFolders();
+            final Instant exportedAt = Instant.now();
             final Map<String, Object> root = new LinkedHashMap<>();
             root.put("playerId", playerId.toString());
             if (progress.getLastKnownName() != null) {
                 root.put("lastKnownName", progress.getLastKnownName());
             }
-            root.put("exportedAt", Instant.now().toString());
+            root.put("exportedAt", exportedAt.toString());
             final List<Map<String, Object>> completions = new ArrayList<>();
             for (final CompletionRecord record : progress.getCompletions()) {
                 completions.add(toCompletionMap(record));
@@ -478,10 +496,24 @@ public final class ProgressDataManager {
                 writer.write(System.lineSeparator());
             }
             dirtyPlayers.remove(playerId);
+            appendPlayerUpdateLog(playerId, exportedAt, progress.getLastKnownName());
         } catch (final IOException | RuntimeException exception) {
             plugin.getLogger().log(Level.SEVERE,
                     "Konnte Spielerfortschritt nicht speichern: " + playerId, exception);
         }
+    }
+
+    private void appendPlayerUpdateLog(final UUID playerId, final Instant exportedAt, final String playerName)
+            throws IOException {
+        final Map<String, Object> logEntry = new LinkedHashMap<>();
+        logEntry.put("playerId", playerId.toString());
+        logEntry.put("updatedAt", exportedAt.toString());
+        if (playerName != null && !playerName.isBlank()) {
+            logEntry.put("lastKnownName", playerName);
+        }
+        final String serialized = SimpleJson.stringify(logEntry) + System.lineSeparator();
+        Files.writeString(playerUpdateLogFile, serialized, StandardCharsets.UTF_8, StandardOpenOption.CREATE,
+                StandardOpenOption.APPEND);
     }
 
     private Map<String, Object> toMasterMap(final MasterEntry entry) {
