@@ -17,6 +17,10 @@ commands:
     description: Listet registrierte Event-Teilnehmer auf oder wählt einen zufällig aus.
     usage: /getalleventuser [@r]
     permission: behamotten.getall
+  refreshprogressmasters:
+    description: Initialisiert die Fortschritts-Masterdateien neu.
+    usage: /refreshprogressmasters
+    permission: behamotten.progress.refresh
 permissions:
   behamotten.setevents:
     description: Erlaubt einem Spieler, sich für Events zu registrieren.
@@ -26,4 +30,7 @@ permissions:
     default: true
   behamotten.getall:
     description: Erlaubt das Anzeigen aller registrierten Event-Teilnehmer.
+    default: op
+  behamotten.progress.refresh:
+    description: Erlaubt das Aktualisieren der Fortschritts-Masterdateien.
     default: op

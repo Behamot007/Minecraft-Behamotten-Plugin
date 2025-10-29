@@ -2,10 +2,13 @@ package com.behamotten.events;
 
 import java.util.Iterator;
 import org.bukkit.advancement.Advancement;
+import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import com.behamotten.events.progress.AdvancementProgressListener;
 import com.behamotten.events.progress.ProgressDataManager;
+import com.behamotten.events.progress.ProgressDataManager.MasterRefreshResult;
+import com.behamotten.events.progress.ProgressMasterCommand;
 
 /**
  * Main plugin entry point for managing event participation commands and persistence.
@@ -19,11 +22,10 @@ public final class BehamottenEventsPlugin extends JavaPlugin {
         participationData = EventParticipationData.load(this);
         progressDataManager = ProgressDataManager.load(this);
         new EventCommandRegistrar(this, participationData).registerCommands();
+        registerProgressCommands();
         getLogger().info(() -> "Loaded " + participationData.getParticipantCount() + " event participants.");
         registerProgressListeners();
-        synchronizeAdvancements();
-        importQuestDefinitions();
-        finalizeProgressMaster();
+        initializeProgressMasters();
     }
 
     @Override
@@ -43,31 +45,25 @@ public final class BehamottenEventsPlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(new AdvancementProgressListener(progressDataManager), this);
     }
 
-    private void synchronizeAdvancements() {
+    private void registerProgressCommands() {
+        if (progressDataManager == null) {
+            return;
+        }
+        final PluginCommand refreshCommand = getCommand("refreshprogressmasters");
+        if (refreshCommand == null) {
+            getLogger().severe("Command 'refreshprogressmasters' is not defined in plugin.yml.");
+            return;
+        }
+        refreshCommand.setExecutor(new ProgressMasterCommand(this, progressDataManager));
+    }
+
+    private void initializeProgressMasters() {
         if (progressDataManager == null) {
             return;
         }
         final Iterator<Advancement> iterator = getServer().advancementIterator();
-        final int synchronizedAdvancements = progressDataManager.synchronizeAdvancements(iterator);
-        if (synchronizedAdvancements > 0) {
-            getLogger().info(() -> "Synchronised " + synchronizedAdvancements + " advancements into progress exports.");
-        }
-    }
-
-    private void importQuestDefinitions() {
-        if (progressDataManager == null) {
-            return;
-        }
-        final int imported = progressDataManager.importQuestDefinitions();
-        if (imported > 0) {
-            getLogger().info(() -> "Imported " + imported + " quest definitions for progress exports.");
-        }
-    }
-
-    private void finalizeProgressMaster() {
-        if (progressDataManager == null) {
-            return;
-        }
-        progressDataManager.finalizeMasterExport();
+        final MasterRefreshResult result = progressDataManager.refreshMasterExports(iterator);
+        getLogger().info(() -> "Fortschritts-Masterdateien initialisiert (Advancements: "
+                + result.getAdvancementCount() + ", Quests: " + result.getQuestCount() + ").");
     }
 }
