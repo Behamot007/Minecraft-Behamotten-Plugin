@@ -254,7 +254,8 @@ public final class ProgressDataManager {
             }
             plugin.getLogger().info(() -> "Geladene Master-Einträge: " + masterEntries.size());
             masterDirty = false;
-            masterFileLocked = true;
+            masterFileLocked = false;
+            masterInitializationReason = null;
         } catch (final IOException | SimpleJson.JsonException exception) {
             plugin.getLogger().log(Level.SEVERE, "Konnte Master-Datei nicht laden: " + masterFile, exception);
             markMasterInitializationRequired("Lese-/Parserfehler");
@@ -312,19 +313,14 @@ public final class ProgressDataManager {
         }
         final MasterEntry normalized = entry.normalize();
         final MasterEntry existing = masterEntries.get(normalized.getId());
-        if (masterFileLocked) {
-            if (existing == null) {
-                plugin.getLogger().log(Level.WARNING,
-                        "Neuer Master-Eintrag '" + normalized.getId()
-                                + "' wurde ignoriert, da die Master-Datei bereits fixiert ist."
-                                + " Spielerfortschritt wird trotzdem gespeichert, aktualisieren Sie die Master-Datei manuell.");
-                masterEntries.put(normalized.getId(), normalized);
-                return normalized;
-            }
-            return existing;
-        }
         if (!normalized.equals(existing)) {
             masterEntries.put(normalized.getId(), normalized);
+            if (masterFileLocked) {
+                plugin.getLogger().info(() -> "Master-Datei wird für Aktualisierungen freigegeben (neuer Eintrag: "
+                        + normalized.getId() + ")");
+                masterFileLocked = false;
+                masterInitializationReason = null;
+            }
             masterDirty = true;
             plugin.getLogger().info(() -> "Master-Eintrag aktualisiert: " + normalized.getId());
         }
@@ -699,11 +695,7 @@ public final class ProgressDataManager {
 
     private void saveMasterIfDirty() {
         if (masterFileLocked) {
-            if (masterDirty) {
-                plugin.getLogger().warning(() -> "Master-Datei ist fixiert und kann nicht aktualisiert werden: " + masterFile);
-            } else {
-                plugin.getLogger().info(() -> "Master-Datei ist bereits fixiert und aktuell: " + masterFile);
-            }
+            plugin.getLogger().info(() -> "Master-Datei ist fixiert und aktuell: " + masterFile);
             masterDirty = false;
             return;
         }
