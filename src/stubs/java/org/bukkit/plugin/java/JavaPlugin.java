@@ -8,6 +8,7 @@ import java.util.logging.Logger;
 import org.bukkit.Server;
 import org.bukkit.advancement.Advancement;
 import org.bukkit.command.PluginCommand;
+import org.bukkit.event.Listener;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.PluginManager;
 
@@ -43,7 +44,7 @@ public class JavaPlugin implements Plugin {
     }
 
     private static final class MockServer implements Server {
-        private final PluginManager pluginManager = new PluginManager();
+        private final PluginManager pluginManager = new MockPluginManager();
 
         @Override
         public PluginManager getPluginManager() {
@@ -53,6 +54,13 @@ public class JavaPlugin implements Plugin {
         @Override
         public Iterator<Advancement> advancementIterator() {
             return Collections.emptyIterator();
+        }
+
+        private static final class MockPluginManager implements PluginManager {
+            @Override
+            public void registerEvents(final Listener listener, final Plugin plugin) {
+                // no-op for tests
+            }
         }
     }
 }

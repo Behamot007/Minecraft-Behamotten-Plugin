@@ -59,6 +59,11 @@ public final class ProgressDataManager {
         this.questDefinitionsFile = dataFolder.resolve(QUEST_DEFINITIONS_FILE_NAME);
         this.playerUpdateLogFile = dataFolder.resolve(PLAYER_UPDATE_LOG_FILE_NAME);
         this.masterFileLocked = Files.exists(masterFile);
+        if (masterFileLocked) {
+            plugin.getLogger().info(() -> "Vorhandene Master-Datei gefunden: " + masterFile);
+        } else {
+            plugin.getLogger().info(() -> "Keine Master-Datei gefunden, es wird eine neue erstellt: " + masterFile);
+        }
         loadMasterFile();
     }
 
@@ -113,6 +118,7 @@ public final class ProgressDataManager {
 
     public int importQuestDefinitions(final Path definitionFile) {
         if (definitionFile == null || !Files.exists(definitionFile)) {
+            plugin.getLogger().warning(() -> "Quest-Definitionen nicht gefunden: " + definitionFile);
             return 0;
         }
         try (Reader reader = Files.newBufferedReader(definitionFile, StandardCharsets.UTF_8)) {
@@ -141,7 +147,9 @@ public final class ProgressDataManager {
                     }
                 }
             }
-            return imported;
+            final int totalImported = imported;
+            plugin.getLogger().info(() -> "Quest-Definitionen importiert: " + totalImported + " aus " + definitionFile);
+            return totalImported;
         } catch (final IOException | SimpleJson.JsonException exception) {
             plugin.getLogger().log(Level.SEVERE,
                     "Konnte Quest-Definitionen nicht laden: " + definitionFile, exception);
@@ -211,7 +219,9 @@ public final class ProgressDataManager {
 
     private void loadMasterFile() {
         masterEntries.clear();
+        plugin.getLogger().info(() -> "Lade Master-Datei: " + masterFile);
         if (!Files.exists(masterFile)) {
+            plugin.getLogger().warning(() -> "Master-Datei nicht gefunden, starte mit leerer Sammlung: " + masterFile);
             masterDirty = true;
             return;
         }
@@ -227,10 +237,14 @@ public final class ProgressDataManager {
                         final MasterEntry entry = parseMasterEntry(element);
                         if (entry != null) {
                             masterEntries.put(entry.getId(), entry);
+                        } else {
+                            plugin.getLogger().warning(
+                                    () -> "Eintrag in Master-Datei konnte nicht gelesen werden und wurde ignoriert.");
                         }
                     }
                 }
             }
+            plugin.getLogger().info(() -> "Geladene Master-Einträge: " + masterEntries.size());
             masterDirty = false;
         } catch (final IOException | SimpleJson.JsonException exception) {
             plugin.getLogger().log(Level.SEVERE, "Konnte Master-Datei nicht laden.", exception);
@@ -284,6 +298,7 @@ public final class ProgressDataManager {
 
     private MasterEntry upsertMasterEntry(final MasterEntry entry) {
         if (entry == null || entry.getId() == null) {
+            plugin.getLogger().warning("Ungültiger Master-Eintrag ohne ID wurde ignoriert.");
             return null;
         }
         final MasterEntry normalized = entry.normalize();
@@ -300,6 +315,7 @@ public final class ProgressDataManager {
         if (!normalized.equals(existing)) {
             masterEntries.put(normalized.getId(), normalized);
             masterDirty = true;
+            plugin.getLogger().info(() -> "Master-Eintrag aktualisiert: " + normalized.getId());
         }
         return masterEntries.get(normalized.getId());
     }
@@ -456,8 +472,17 @@ public final class ProgressDataManager {
     }
 
     private void saveMasterIfDirty() {
-        if (masterFileLocked || !masterDirty) {
+        if (masterFileLocked) {
+            if (masterDirty) {
+                plugin.getLogger().warning(() -> "Master-Datei ist fixiert und kann nicht aktualisiert werden: " + masterFile);
+            } else {
+                plugin.getLogger().info(() -> "Master-Datei ist bereits fixiert und aktuell: " + masterFile);
+            }
             masterDirty = false;
+            return;
+        }
+        if (!masterDirty) {
+            plugin.getLogger().info(() -> "Master-Datei ist bereits aktuell: " + masterFile);
             return;
         }
         try {
@@ -470,6 +495,8 @@ public final class ProgressDataManager {
             }
             root.put("entries", entries);
             final String json = SimpleJson.stringify(root);
+            plugin.getLogger().info(
+                    () -> "Schreibe Master-Datei mit " + masterEntries.size() + " Einträgen: " + masterFile);
             try (Writer writer = Files.newBufferedWriter(masterFile, StandardCharsets.UTF_8,
                     StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE)) {
                 writer.write(json);
@@ -477,6 +504,7 @@ public final class ProgressDataManager {
             }
             masterDirty = false;
             masterFileLocked = true;
+            plugin.getLogger().info(() -> "Master-Datei erfolgreich aktualisiert: " + masterFile);
         } catch (final IOException | RuntimeException exception) {
             plugin.getLogger().log(Level.SEVERE, "Konnte Master-Datei nicht speichern.", exception);
         }

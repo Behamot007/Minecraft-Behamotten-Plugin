@@ -3,10 +3,8 @@ package org.bukkit.plugin;
 import org.bukkit.event.Listener;
 
 /**
- * Minimal plugin manager stub.
+ * Minimal plugin manager stub mirroring the Bukkit interface type.
  */
-public class PluginManager {
-    public void registerEvents(final Listener listener, final Plugin plugin) {
-        // no-op for tests
-    }
+public interface PluginManager {
+    void registerEvents(Listener listener, Plugin plugin);
 }
