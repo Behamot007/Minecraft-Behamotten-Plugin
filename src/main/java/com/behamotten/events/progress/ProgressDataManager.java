@@ -58,8 +58,9 @@ public final class ProgressDataManager {
         this.playersDirectory = dataFolder.resolve(PLAYERS_DIRECTORY_NAME);
         this.questDefinitionsFile = dataFolder.resolve(QUEST_DEFINITIONS_FILE_NAME);
         this.playerUpdateLogFile = dataFolder.resolve(PLAYER_UPDATE_LOG_FILE_NAME);
-        this.masterFileLocked = Files.exists(masterFile);
-        if (masterFileLocked) {
+        final boolean masterExists = Files.exists(masterFile);
+        this.masterFileLocked = false;
+        if (masterExists) {
             plugin.getLogger().info(() -> "Vorhandene Master-Datei gefunden: " + masterFile);
         } else {
             plugin.getLogger().info(() -> "Keine Master-Datei gefunden, es wird eine neue erstellt: " + masterFile);
@@ -223,6 +224,7 @@ public final class ProgressDataManager {
         if (!Files.exists(masterFile)) {
             plugin.getLogger().warning(() -> "Master-Datei nicht gefunden, starte mit leerer Sammlung: " + masterFile);
             masterDirty = true;
+            masterFileLocked = false;
             return;
         }
         try {
@@ -244,11 +246,19 @@ public final class ProgressDataManager {
                     }
                 }
             }
+            if (masterEntries.isEmpty()) {
+                plugin.getLogger().warning(() -> "Master-Datei enthält keine Einträge und wird neu erstellt: " + masterFile);
+                masterDirty = true;
+                masterFileLocked = false;
+                return;
+            }
             plugin.getLogger().info(() -> "Geladene Master-Einträge: " + masterEntries.size());
             masterDirty = false;
+            masterFileLocked = true;
         } catch (final IOException | SimpleJson.JsonException exception) {
             plugin.getLogger().log(Level.SEVERE, "Konnte Master-Datei nicht laden.", exception);
             masterDirty = true;
+            masterFileLocked = false;
         }
     }
 
