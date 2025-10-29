@@ -34,40 +34,36 @@ import org.bukkit.plugin.java.JavaPlugin;
  * Centralizes the export of advancement and quest data into structured JSON files.
  */
 public final class ProgressDataManager {
-    private static final String MASTER_FILE_NAME = "progress_master.json";
+    private static final String ADVANCEMENT_MASTER_FILE_NAME = "progress_master_advancements.json";
+    private static final String QUEST_MASTER_FILE_NAME = "progress_master_quests.json";
+    private static final String LEGACY_MASTER_FILE_NAME = "progress_master.json";
     private static final String PLAYERS_DIRECTORY_NAME = "progress_players";
     private static final String QUEST_DEFINITIONS_FILE_NAME = "ftbquests_definitions.json";
     private static final String PLAYER_UPDATE_LOG_FILE_NAME = "progress_player_updates.log";
 
     private final JavaPlugin plugin;
-    private final Path masterFile;
+    private final Path legacyMasterFile;
     private final Path playersDirectory;
     private final Path questDefinitionsFile;
     private final Path playerUpdateLogFile;
-
-    private final Map<String, MasterEntry> masterEntries = new LinkedHashMap<>();
+    private final MasterFileContext advancementMaster;
+    private final MasterFileContext questMaster;
     private final Map<UUID, PlayerProgress> playerProgress = new LinkedHashMap<>();
     private final Set<UUID> dirtyPlayers = new HashSet<>();
-    private boolean masterDirty;
-    private boolean masterFileLocked;
-    private String masterInitializationReason;
 
     private ProgressDataManager(final JavaPlugin plugin) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
         final Path dataFolder = plugin.getDataFolder().toPath();
-        this.masterFile = dataFolder.resolve(MASTER_FILE_NAME);
+        this.legacyMasterFile = dataFolder.resolve(LEGACY_MASTER_FILE_NAME);
         this.playersDirectory = dataFolder.resolve(PLAYERS_DIRECTORY_NAME);
         this.questDefinitionsFile = dataFolder.resolve(QUEST_DEFINITIONS_FILE_NAME);
         this.playerUpdateLogFile = dataFolder.resolve(PLAYER_UPDATE_LOG_FILE_NAME);
-        final boolean masterExists = Files.exists(masterFile);
-        this.masterFileLocked = false;
-        this.masterInitializationReason = null;
-        if (masterExists) {
-            plugin.getLogger().info(() -> "Vorhandene Master-Datei gefunden: " + masterFile);
-        } else {
-            plugin.getLogger().info(() -> "Keine Master-Datei gefunden, es wird eine neue erstellt: " + masterFile);
-        }
-        loadMasterFile();
+        this.advancementMaster = new MasterFileContext(
+                dataFolder.resolve(ADVANCEMENT_MASTER_FILE_NAME), MasterEntry.EntryType.ADVANCEMENT);
+        this.questMaster = new MasterFileContext(
+                dataFolder.resolve(QUEST_MASTER_FILE_NAME), MasterEntry.EntryType.QUEST);
+        loadMasterFile(advancementMaster);
+        loadMasterFile(questMaster);
     }
 
     public static ProgressDataManager load(final JavaPlugin plugin) {
@@ -75,7 +71,7 @@ public final class ProgressDataManager {
     }
 
     public int getMasterEntryCount() {
-        return masterEntries.size();
+        return advancementMaster.entries.size() + questMaster.entries.size();
     }
 
     public Path getQuestDefinitionsFile() {
@@ -104,7 +100,7 @@ public final class ProgressDataManager {
         if (entry == null) {
             return null;
         }
-        return upsertMasterEntry(entry);
+        return upsertMasterEntry(advancementMaster, entry);
     }
 
     public MasterEntry registerQuest(final QuestDefinition questDefinition) {
@@ -112,7 +108,7 @@ public final class ProgressDataManager {
             return null;
         }
         final MasterEntry entry = questDefinition.normalize().toMasterEntry();
-        return upsertMasterEntry(entry);
+        return upsertMasterEntry(questMaster, entry);
     }
 
     public int importQuestDefinitions() {
@@ -121,7 +117,8 @@ public final class ProgressDataManager {
 
     public int importQuestDefinitions(final Path definitionFile) {
         if (definitionFile == null || !Files.exists(definitionFile)) {
-            plugin.getLogger().warning(() -> "Quest-Definitionen nicht gefunden: " + definitionFile);
+            plugin.getLogger().severe(() -> "Quest-Definitionen nicht gefunden: " + definitionFile);
+            markMasterInitializationRequired(questMaster, "Quest-Definitionen fehlen");
             return 0;
         }
         try (Reader reader = Files.newBufferedReader(definitionFile, StandardCharsets.UTF_8)) {
@@ -133,14 +130,23 @@ public final class ProgressDataManager {
             }
             final Object parsed = SimpleJson.parse(builder.toString());
             if (!(parsed instanceof Map<?, ?>)) {
+                plugin.getLogger().severe(() -> "Unerwartetes Format der Quest-Definitionen: " + definitionFile);
+                markMasterInitializationRequired(questMaster, "Ungültiges Format");
                 return 0;
             }
             final Map<?, ?> root = (Map<?, ?>) parsed;
             final Object questsObj = root.get("quests");
             if (!(questsObj instanceof List<?>)) {
+                plugin.getLogger().severe(() -> "Quest-Liste fehlt im Definitionsdokument: " + definitionFile);
+                markMasterInitializationRequired(questMaster, "Quest-Liste fehlt");
                 return 0;
             }
             final List<?> questList = (List<?>) questsObj;
+            if (questList.isEmpty()) {
+                plugin.getLogger().warning(
+                        () -> "Quest-Definitionen enthalten keine Quests und werden neu initialisiert: " + definitionFile);
+                markMasterInitializationRequired(questMaster, "Keine Quests gefunden");
+            }
             int imported = 0;
             for (final Object questElement : questList) {
                 final QuestDefinition quest = parseQuestDefinition(questElement);
@@ -148,20 +154,46 @@ public final class ProgressDataManager {
                     if (registerQuest(quest) != null) {
                         imported++;
                     }
+                } else {
+                    plugin.getLogger().warning(
+                            () -> "Quest-Definition konnte nicht verarbeitet werden und wurde ignoriert: "
+                                    + String.valueOf(questElement));
                 }
             }
             final int totalImported = imported;
             plugin.getLogger().info(() -> "Quest-Definitionen importiert: " + totalImported + " aus " + definitionFile);
+            if (totalImported == 0) {
+                plugin.getLogger().warning(
+                        () -> "Es wurden keine Quest-Definitionen importiert. Bitte prüfen Sie die Quelldatei: "
+                                + definitionFile);
+            }
             return totalImported;
         } catch (final IOException | SimpleJson.JsonException exception) {
             plugin.getLogger().log(Level.SEVERE,
                     "Konnte Quest-Definitionen nicht laden: " + definitionFile, exception);
+            markMasterInitializationRequired(questMaster, "Fehler beim Laden der Quest-Definitionen");
             return 0;
         }
     }
 
+    public MasterRefreshResult refreshMasterExports(final Iterator<Advancement> advancements) {
+        plugin.getLogger().info("Starte Neuinitialisierung der Fortschritts-Masterdateien.");
+        deleteLegacyMasterFile();
+        resetMaster(advancementMaster, "Neuinitialisierung angefordert");
+        resetMaster(questMaster, "Neuinitialisierung angefordert");
+        deleteMasterFile(advancementMaster);
+        deleteMasterFile(questMaster);
+        final int synchronizedAdvancements = synchronizeAdvancements(advancements);
+        final int importedQuests = importQuestDefinitions();
+        finalizeMasterExport();
+        plugin.getLogger().info(() -> "Neuinitialisierung abgeschlossen. Advancements: " + synchronizedAdvancements
+                + ", Quests: " + importedQuests);
+        return new MasterRefreshResult(synchronizedAdvancements, importedQuests);
+    }
+
     public void finalizeMasterExport() {
-        saveMasterIfDirty();
+        saveMasterIfDirty(advancementMaster);
+        saveMasterIfDirty(questMaster);
     }
 
     public void recordAdvancementCompletion(final Player player, final Advancement advancement) {
@@ -205,7 +237,7 @@ public final class ProgressDataManager {
     }
 
     public void saveAll() {
-        saveMasterIfDirty();
+        finalizeMasterExport();
         if (dirtyPlayers.isEmpty()) {
             return;
         }
@@ -220,16 +252,18 @@ public final class ProgressDataManager {
         }
     }
 
-    private void loadMasterFile() {
-        masterEntries.clear();
-        plugin.getLogger().info(() -> "Lade Master-Datei: " + masterFile);
-        if (!Files.exists(masterFile)) {
-            plugin.getLogger().warning(() -> "Master-Datei nicht gefunden, starte mit leerer Sammlung: " + masterFile);
-            markMasterInitializationRequired("Datei nicht vorhanden");
+    private void loadMasterFile(final MasterFileContext context) {
+        context.entries.clear();
+        final Path file = context.file;
+        plugin.getLogger().info(() -> "Lade " + context.entryType + "-Master-Datei: " + file);
+        if (!Files.exists(file)) {
+            plugin.getLogger().warning(() -> context.entryType + "-Master-Datei nicht gefunden, starte mit leerer Sammlung: "
+                    + file);
+            markMasterInitializationRequired(context, "Datei nicht vorhanden");
             return;
         }
         try {
-            final String content = Files.readString(masterFile, StandardCharsets.UTF_8);
+            final String content = Files.readString(file, StandardCharsets.UTF_8);
             final Object parsed = SimpleJson.parse(content);
             if (parsed instanceof Map<?, ?>) {
                 final Map<?, ?> root = (Map<?, ?>) parsed;
@@ -239,26 +273,35 @@ public final class ProgressDataManager {
                     for (final Object element : list) {
                         final MasterEntry entry = parseMasterEntry(element);
                         if (entry != null) {
-                            masterEntries.put(entry.getId(), entry);
+                            if (entry.getType() != context.entryType) {
+                                plugin.getLogger().warning(() -> "Eintrag '" + entry.getId()
+                                        + "' besitzt den Typ " + entry.getType()
+                                        + " und passt nicht zur Master-Datei. Der Eintrag wird ignoriert.");
+                                continue;
+                            }
+                            context.entries.put(entry.getId(), entry);
                         } else {
-                            plugin.getLogger().warning(
-                                    () -> "Eintrag in Master-Datei konnte nicht gelesen werden und wurde ignoriert.");
+                            plugin.getLogger().warning(() -> "Eintrag in " + context.entryType
+                                    + "-Master-Datei konnte nicht gelesen werden und wurde ignoriert.");
                         }
                     }
                 }
             }
-            if (masterEntries.isEmpty()) {
-                plugin.getLogger().warning(() -> "Master-Datei enthält keine Einträge und wird neu erstellt: " + masterFile);
-                markMasterInitializationRequired("Keine Einträge vorhanden");
+            if (context.entries.isEmpty()) {
+                plugin.getLogger().warning(() -> context.entryType
+                        + "-Master-Datei enthält keine Einträge und wird neu erstellt: " + file);
+                markMasterInitializationRequired(context, "Keine Einträge vorhanden");
                 return;
             }
-            plugin.getLogger().info(() -> "Geladene Master-Einträge: " + masterEntries.size());
-            masterDirty = false;
-            masterFileLocked = false;
-            masterInitializationReason = null;
+            plugin.getLogger().info(
+                    () -> "Geladene " + context.entryType + "-Master-Einträge: " + context.entries.size());
+            context.dirty = false;
+            context.locked = false;
+            context.initializationReason = null;
         } catch (final IOException | SimpleJson.JsonException exception) {
-            plugin.getLogger().log(Level.SEVERE, "Konnte Master-Datei nicht laden: " + masterFile, exception);
-            markMasterInitializationRequired("Lese-/Parserfehler");
+            plugin.getLogger().log(Level.SEVERE,
+                    "Konnte " + context.entryType + "-Master-Datei nicht laden: " + file, exception);
+            markMasterInitializationRequired(context, "Lese-/Parserfehler");
         }
     }
 
@@ -306,25 +349,31 @@ public final class ProgressDataManager {
         }
     }
 
-    private MasterEntry upsertMasterEntry(final MasterEntry entry) {
+    private MasterEntry upsertMasterEntry(final MasterFileContext context, final MasterEntry entry) {
         if (entry == null || entry.getId() == null) {
             plugin.getLogger().warning("Ungültiger Master-Eintrag ohne ID wurde ignoriert.");
             return null;
         }
-        final MasterEntry normalized = entry.normalize();
-        final MasterEntry existing = masterEntries.get(normalized.getId());
-        if (!normalized.equals(existing)) {
-            masterEntries.put(normalized.getId(), normalized);
-            if (masterFileLocked) {
-                plugin.getLogger().info(() -> "Master-Datei wird für Aktualisierungen freigegeben (neuer Eintrag: "
-                        + normalized.getId() + ")");
-                masterFileLocked = false;
-                masterInitializationReason = null;
-            }
-            masterDirty = true;
-            plugin.getLogger().info(() -> "Master-Eintrag aktualisiert: " + normalized.getId());
+        if (entry.getType() != context.entryType) {
+            plugin.getLogger().severe(() -> "Eintrag '" + entry.getId() + "' besitzt den Typ " + entry.getType()
+                    + " und kann nicht in " + context.entryType + "-Master-Datei geschrieben werden.");
+            return null;
         }
-        return masterEntries.get(normalized.getId());
+        final MasterEntry normalized = entry.normalize();
+        final MasterEntry existing = context.entries.get(normalized.getId());
+        if (!normalized.equals(existing)) {
+            context.entries.put(normalized.getId(), normalized);
+            if (context.locked) {
+                plugin.getLogger().info(() -> context.entryType
+                        + "-Master-Datei wird für Aktualisierungen freigegeben (neuer Eintrag: "
+                        + normalized.getId() + ")");
+                context.locked = false;
+                context.initializationReason = null;
+            }
+            context.dirty = true;
+            plugin.getLogger().info(() -> context.entryType + "-Master-Eintrag aktualisiert: " + normalized.getId());
+        }
+        return context.entries.get(normalized.getId());
     }
 
     private MasterEntry parseMasterEntry(final Object value) {
@@ -693,54 +742,56 @@ public final class ProgressDataManager {
         return candidate.toString();
     }
 
-    private void saveMasterIfDirty() {
-        if (masterFileLocked) {
-            plugin.getLogger().info(() -> "Master-Datei ist fixiert und aktuell: " + masterFile);
-            masterDirty = false;
+    private void saveMasterIfDirty(final MasterFileContext context) {
+        if (context.locked) {
+            plugin.getLogger().info(() -> context.entryType + "-Master-Datei ist fixiert und aktuell: " + context.file);
+            context.dirty = false;
             return;
         }
-        if (!masterDirty) {
-            plugin.getLogger().info(() -> "Master-Datei ist bereits aktuell: " + masterFile);
+        if (!context.dirty) {
+            plugin.getLogger().info(() -> context.entryType + "-Master-Datei ist bereits aktuell: " + context.file);
             return;
         }
-        if (masterInitializationReason != null && !masterInitializationReason.isBlank()) {
-            final String reason = masterInitializationReason;
-            plugin.getLogger().warning(() -> "Initialisiere Master-Datei (Grund: " + reason
-                    + "). Bitte prüfen Sie die Quest-Definitionen und aktualisieren Sie die Datei bei Bedarf: " + masterFile);
+        if (context.initializationReason != null && !context.initializationReason.isBlank()) {
+            final String reason = context.initializationReason;
+            plugin.getLogger().warning(() -> "Initialisiere " + context.entryType + "-Master-Datei (Grund: " + reason
+                    + "). Bitte prüfen Sie die Quelldaten und aktualisieren Sie die Datei bei Bedarf: " + context.file);
         }
         try {
             ensureDataFolders();
             final Map<String, Object> root = new LinkedHashMap<>();
             root.put("generatedAt", Instant.now().toString());
             final List<Map<String, Object>> entries = new ArrayList<>();
-            for (final MasterEntry entry : masterEntries.values()) {
+            for (final MasterEntry entry : context.entries.values()) {
                 entries.add(toMasterMap(entry));
             }
             root.put("entries", entries);
             final String json = SimpleJson.stringify(root);
-            plugin.getLogger().info(
-                    () -> "Schreibe Master-Datei mit " + masterEntries.size() + " Einträgen: " + masterFile);
-            try (Writer writer = Files.newBufferedWriter(masterFile, StandardCharsets.UTF_8,
+            plugin.getLogger().info(() -> "Schreibe " + context.entryType + "-Master-Datei mit "
+                    + context.entries.size() + " Einträgen: " + context.file);
+            try (Writer writer = Files.newBufferedWriter(context.file, StandardCharsets.UTF_8,
                     StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE)) {
                 writer.write(json);
                 writer.write(System.lineSeparator());
             }
-            masterDirty = false;
-            masterFileLocked = true;
-            masterInitializationReason = null;
-            plugin.getLogger().info(() -> "Master-Datei erfolgreich aktualisiert: " + masterFile);
+            context.dirty = false;
+            context.locked = true;
+            context.initializationReason = null;
+            plugin.getLogger().info(
+                    () -> context.entryType + "-Master-Datei erfolgreich aktualisiert: " + context.file);
         } catch (final IOException | RuntimeException exception) {
-            plugin.getLogger().log(Level.SEVERE, "Konnte Master-Datei nicht speichern: " + masterFile, exception);
+            plugin.getLogger().log(Level.SEVERE,
+                    "Konnte " + context.entryType + "-Master-Datei nicht speichern: " + context.file, exception);
         }
     }
 
-    private void markMasterInitializationRequired(final String reason) {
-        masterDirty = true;
-        masterFileLocked = false;
+    private void markMasterInitializationRequired(final MasterFileContext context, final String reason) {
+        context.dirty = true;
+        context.locked = false;
         if (reason == null || reason.isBlank()) {
-            masterInitializationReason = "Unbekannter Grund";
+            context.initializationReason = "Unbekannter Grund";
         } else {
-            masterInitializationReason = reason;
+            context.initializationReason = reason;
         }
     }
 
@@ -906,11 +957,91 @@ public final class ProgressDataManager {
         return result;
     }
 
+    private void resetMaster(final MasterFileContext context, final String reason) {
+        context.entries.clear();
+        context.dirty = true;
+        context.locked = false;
+        context.initializationReason = reason;
+    }
+
+    private void deleteMasterFile(final MasterFileContext context) {
+        try {
+            if (Files.deleteIfExists(context.file)) {
+                plugin.getLogger().info(() -> context.entryType + "-Master-Datei gelöscht: " + context.file);
+            }
+        } catch (final IOException exception) {
+            plugin.getLogger().log(Level.WARNING,
+                    "Konnte " + context.entryType + "-Master-Datei nicht löschen: " + context.file, exception);
+        }
+    }
+
+    private void deleteLegacyMasterFile() {
+        try {
+            if (Files.deleteIfExists(legacyMasterFile)) {
+                plugin.getLogger().info(() -> "Veraltete Master-Datei entfernt: " + legacyMasterFile);
+            }
+        } catch (final IOException exception) {
+            plugin.getLogger().log(Level.WARNING,
+                    "Konnte veraltete Master-Datei nicht löschen: " + legacyMasterFile, exception);
+        }
+    }
+
     private void ensureDataFolders() throws IOException {
-        final Path parent = masterFile.getParent();
-        if (parent != null) {
-            Files.createDirectories(parent);
+        final Path advancementParent = advancementMaster.file.getParent();
+        if (advancementParent != null) {
+            Files.createDirectories(advancementParent);
+        }
+        final Path questParent = questMaster.file.getParent();
+        if (questParent != null) {
+            Files.createDirectories(questParent);
         }
         Files.createDirectories(playersDirectory);
+        final Path logParent = playerUpdateLogFile.getParent();
+        if (logParent != null) {
+            Files.createDirectories(logParent);
+        }
+    }
+
+    public static final class MasterRefreshResult {
+        private final int advancementCount;
+        private final int questCount;
+
+        public MasterRefreshResult(final int advancementCount, final int questCount) {
+            this.advancementCount = advancementCount;
+            this.questCount = questCount;
+        }
+
+        public int getAdvancementCount() {
+            return advancementCount;
+        }
+
+        public int getQuestCount() {
+            return questCount;
+        }
+
+        @Override
+        public String toString() {
+            return "MasterRefreshResult{" +
+                    "advancementCount=" + advancementCount +
+                    ", questCount=" + questCount +
+                    '}';
+        }
+    }
+
+    private static final class MasterFileContext {
+        private final Path file;
+        private final MasterEntry.EntryType entryType;
+        private final Map<String, MasterEntry> entries = new LinkedHashMap<>();
+        private boolean dirty;
+        private boolean locked;
+        private String initializationReason;
+
+        private MasterFileContext(final Path file, final MasterEntry.EntryType entryType) {
+            this.file = file;
+            this.entryType = entryType;
+            this.dirty = false;
+            this.locked = false;
+            this.initializationReason = null;
+        }
     }
 }
