@@ -622,8 +622,68 @@ public final class ProgressDataManager {
         if (itemStack == null) {
             return null;
         }
-        final Object type = itemStack.getType();
-        return type != null ? type.toString() : null;
+        Object type = null;
+        try {
+            final Method getTypeMethod = itemStack.getClass().getMethod("getType");
+            type = getTypeMethod.invoke(itemStack);
+        } catch (final ReflectiveOperationException | RuntimeException exception) {
+            plugin.getLogger().log(Level.FINEST, "Konnte ItemStack-Typ nicht ermitteln.", exception);
+        }
+        if (type == null) {
+            return itemStack.toString();
+        }
+        final String identifier = stringifyItemType(type);
+        if (identifier != null) {
+            return identifier;
+        }
+        return type.toString();
+    }
+
+    private String stringifyItemType(final Object type) {
+        if (type == null) {
+            return null;
+        }
+        if (type instanceof CharSequence) {
+            return type.toString();
+        }
+        if (type instanceof Enum<?>) {
+            return ((Enum<?>) type).name();
+        }
+        final Object keyCandidate = invokeZeroArgumentMethod(type, "getKey", "key");
+        final String key = stringifyKeyCandidate(keyCandidate);
+        if (key != null) {
+            return key;
+        }
+        final Object namespacedKeyCandidate = invokeZeroArgumentMethod(type, "getNamespacedKey", "namespacedKey");
+        final String namespacedKey = stringifyKeyCandidate(namespacedKeyCandidate);
+        if (namespacedKey != null) {
+            return namespacedKey;
+        }
+        final Object translationKeyCandidate = invokeZeroArgumentMethod(type, "getTranslationKey", "translationKey");
+        if (translationKeyCandidate instanceof CharSequence) {
+            return translationKeyCandidate.toString();
+        }
+        return null;
+    }
+
+    private String stringifyKeyCandidate(final Object candidate) {
+        if (candidate == null) {
+            return null;
+        }
+        if (candidate instanceof NamespacedKey) {
+            return candidate.toString();
+        }
+        if (candidate instanceof CharSequence) {
+            return candidate.toString();
+        }
+        final Object nestedKey = invokeZeroArgumentMethod(candidate, "getKey", "key");
+        if (nestedKey != null && nestedKey != candidate) {
+            final String nested = stringifyKeyCandidate(nestedKey);
+            if (nested != null) {
+                return nested;
+            }
+        }
+        return candidate.toString();
     }
 
     private void saveMasterIfDirty() {
