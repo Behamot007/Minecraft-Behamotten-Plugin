@@ -5,38 +5,43 @@ import org.bukkit.NamespacedKey;
 import org.bukkit.inventory.ItemStack;
 
 /**
- * Minimal advancement display stub.
+ * Minimal advancement display stub mirroring the Bukkit API.
+ *
+ * <p>The upstream API models {@code AdvancementDisplay} as an interface, so we
+ * provide the same shape here to ensure our code links against the correct
+ * type during compilation. Default implementations are supplied to keep the
+ * stub convenient for unit tests.</p>
  */
-public class AdvancementDisplay {
-    public Component title() {
+public interface AdvancementDisplay {
+    default Component title() {
         return null;
     }
 
-    public Component description() {
+    default Component description() {
         return null;
     }
 
-    public ItemStack icon() {
+    default ItemStack icon() {
         return null;
     }
 
-    public NamespacedKey background() {
+    default NamespacedKey background() {
         return null;
     }
 
-    public AdvancementFrameType frame() {
+    default AdvancementFrameType frame() {
         return AdvancementFrameType.TASK;
     }
 
-    public boolean isHidden() {
+    default boolean isHidden() {
         return false;
     }
 
-    public boolean doesShowToast() {
+    default boolean doesShowToast() {
         return true;
     }
 
-    public boolean doesAnnounceToChat() {
+    default boolean doesAnnounceToChat() {
         return true;
     }
 }
