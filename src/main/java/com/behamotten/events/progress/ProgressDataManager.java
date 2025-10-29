@@ -19,6 +19,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.logging.Level;
@@ -391,8 +392,7 @@ public final class ProgressDataManager {
         final Object descriptionComponent = resolveDisplayComponent(display, "description", "getDescription");
         final String title = titleComponent != null ? componentToPlain(titleComponent) : id;
         final String description = descriptionComponent != null ? componentToPlain(descriptionComponent) : null;
-        final String parentId = advancement.getParent() != null && advancement.getParent().getKey() != null
-                ? advancement.getParent().getKey().toString() : null;
+        final String parentId = resolveParentId(advancement);
         final ItemStack iconStack = resolveDisplayValue(display, ItemStack.class, "icon", "getIcon");
         final String icon = iconStack != null ? stringifyItem(iconStack) : null;
         final Map<String, Object> attributes = new LinkedHashMap<>();
@@ -420,6 +420,78 @@ public final class ProgressDataManager {
         final List<String> criteria = toSortedList(safeCriteria(advancement));
         return new MasterEntry(id, MasterEntry.EntryType.ADVANCEMENT, title, description, parentId, icon,
                 sanitizeAttributes(attributes), criteria);
+    }
+
+    private String resolveParentId(final Advancement advancement) {
+        if (advancement == null) {
+            return null;
+        }
+        final Object parentCandidate = invokeZeroArgumentMethod(advancement,
+                "getParent", "parent", "getParentKey", "parentKey", "getParentNamespacedKey");
+        return extractParentId(parentCandidate);
+    }
+
+    private String extractParentId(final Object candidate) {
+        if (candidate == null) {
+            return null;
+        }
+        if (candidate instanceof Optional<?>) {
+            final Optional<?> optional = (Optional<?>) candidate;
+            return optional.map(this::extractParentId).orElse(null);
+        }
+        if (candidate instanceof Advancement) {
+            final Advancement parentAdvancement = (Advancement) candidate;
+            final NamespacedKey key = parentAdvancement.getKey();
+            return key != null ? key.toString() : null;
+        }
+        if (candidate instanceof NamespacedKey) {
+            return candidate.toString();
+        }
+        if (candidate instanceof CharSequence) {
+            return candidate.toString();
+        }
+        final Object keyCandidate = invokeZeroArgumentMethod(candidate, "getKey", "key",
+                "getNamespacedKey", "namespacedKey");
+        if (keyCandidate != null && keyCandidate != candidate) {
+            final String key = extractParentId(keyCandidate);
+            if (key != null) {
+                return key;
+            }
+        }
+        final Object idCandidate = invokeZeroArgumentMethod(candidate, "getId", "id");
+        if (idCandidate != null && idCandidate != candidate) {
+            final String id = extractParentId(idCandidate);
+            if (id != null) {
+                return id;
+            }
+        }
+        return null;
+    }
+
+    private Object invokeZeroArgumentMethod(final Object target, final String... methodNames) {
+        if (target == null || methodNames == null || methodNames.length == 0) {
+            return null;
+        }
+        final Class<?> targetClass = target.getClass();
+        for (final String methodName : methodNames) {
+            if (methodName == null || methodName.isBlank()) {
+                continue;
+            }
+            try {
+                final Method method = targetClass.getMethod(methodName);
+                final Object value = method.invoke(target);
+                if (value != null) {
+                    return value;
+                }
+            } catch (final NoSuchMethodException ignored) {
+                // Try the next candidate name for the current server version.
+            } catch (final ReflectiveOperationException | IllegalArgumentException exception) {
+                plugin.getLogger().log(Level.FINEST,
+                        "Konnte " + targetClass.getName() + "#" + methodName + " nicht aufrufen.", exception);
+                return null;
+            }
+        }
+        return null;
     }
 
     private Object resolveDisplayComponent(final AdvancementDisplay display, final String... methodNames) {
