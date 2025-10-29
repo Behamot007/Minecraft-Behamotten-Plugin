@@ -5,22 +5,34 @@ import java.util.Collections;
 import org.bukkit.NamespacedKey;
 
 /**
- * Minimal advancement stub.
+ * Minimal advancement stub aligned with the Bukkit interface from 1.21.
  */
-public class Advancement {
-    public NamespacedKey getKey() {
+public interface Advancement {
+    /**
+     * Returns the unique key of this advancement.
+     */
+    default NamespacedKey getKey() {
         return new NamespacedKey("minecraft", "dummy");
     }
 
-    public Advancement getParent() {
+    /**
+     * Returns the parent advancement if available.
+     */
+    default Advancement getParent() {
         return null;
     }
 
-    public AdvancementDisplay getDisplay() {
+    /**
+     * Returns the display information, if any.
+     */
+    default AdvancementDisplay getDisplay() {
         return null;
     }
 
-    public Collection<String> getCriteria() {
+    /**
+     * Returns the criteria defined for this advancement.
+     */
+    default Collection<String> getCriteria() {
         return Collections.emptyList();
     }
 }
