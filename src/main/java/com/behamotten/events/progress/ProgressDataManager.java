@@ -50,6 +50,7 @@ public final class ProgressDataManager {
     private final Set<UUID> dirtyPlayers = new HashSet<>();
     private boolean masterDirty;
     private boolean masterFileLocked;
+    private String masterInitializationReason;
 
     private ProgressDataManager(final JavaPlugin plugin) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
@@ -60,6 +61,7 @@ public final class ProgressDataManager {
         this.playerUpdateLogFile = dataFolder.resolve(PLAYER_UPDATE_LOG_FILE_NAME);
         final boolean masterExists = Files.exists(masterFile);
         this.masterFileLocked = false;
+        this.masterInitializationReason = null;
         if (masterExists) {
             plugin.getLogger().info(() -> "Vorhandene Master-Datei gefunden: " + masterFile);
         } else {
@@ -223,8 +225,7 @@ public final class ProgressDataManager {
         plugin.getLogger().info(() -> "Lade Master-Datei: " + masterFile);
         if (!Files.exists(masterFile)) {
             plugin.getLogger().warning(() -> "Master-Datei nicht gefunden, starte mit leerer Sammlung: " + masterFile);
-            masterDirty = true;
-            masterFileLocked = false;
+            markMasterInitializationRequired("Datei nicht vorhanden");
             return;
         }
         try {
@@ -248,17 +249,15 @@ public final class ProgressDataManager {
             }
             if (masterEntries.isEmpty()) {
                 plugin.getLogger().warning(() -> "Master-Datei enthält keine Einträge und wird neu erstellt: " + masterFile);
-                masterDirty = true;
-                masterFileLocked = false;
+                markMasterInitializationRequired("Keine Einträge vorhanden");
                 return;
             }
             plugin.getLogger().info(() -> "Geladene Master-Einträge: " + masterEntries.size());
             masterDirty = false;
             masterFileLocked = true;
         } catch (final IOException | SimpleJson.JsonException exception) {
-            plugin.getLogger().log(Level.SEVERE, "Konnte Master-Datei nicht laden.", exception);
-            masterDirty = true;
-            masterFileLocked = false;
+            plugin.getLogger().log(Level.SEVERE, "Konnte Master-Datei nicht laden: " + masterFile, exception);
+            markMasterInitializationRequired("Lese-/Parserfehler");
         }
     }
 
@@ -317,8 +316,10 @@ public final class ProgressDataManager {
             if (existing == null) {
                 plugin.getLogger().log(Level.WARNING,
                         "Neuer Master-Eintrag '" + normalized.getId()
-                                + "' wurde ignoriert, da die Master-Datei bereits fixiert ist.");
-                return null;
+                                + "' wurde ignoriert, da die Master-Datei bereits fixiert ist."
+                                + " Spielerfortschritt wird trotzdem gespeichert, aktualisieren Sie die Master-Datei manuell.");
+                masterEntries.put(normalized.getId(), normalized);
+                return normalized;
             }
             return existing;
         }
@@ -710,6 +711,11 @@ public final class ProgressDataManager {
             plugin.getLogger().info(() -> "Master-Datei ist bereits aktuell: " + masterFile);
             return;
         }
+        if (masterInitializationReason != null && !masterInitializationReason.isBlank()) {
+            final String reason = masterInitializationReason;
+            plugin.getLogger().warning(() -> "Initialisiere Master-Datei (Grund: " + reason
+                    + "). Bitte prüfen Sie die Quest-Definitionen und aktualisieren Sie die Datei bei Bedarf: " + masterFile);
+        }
         try {
             ensureDataFolders();
             final Map<String, Object> root = new LinkedHashMap<>();
@@ -729,9 +735,20 @@ public final class ProgressDataManager {
             }
             masterDirty = false;
             masterFileLocked = true;
+            masterInitializationReason = null;
             plugin.getLogger().info(() -> "Master-Datei erfolgreich aktualisiert: " + masterFile);
         } catch (final IOException | RuntimeException exception) {
-            plugin.getLogger().log(Level.SEVERE, "Konnte Master-Datei nicht speichern.", exception);
+            plugin.getLogger().log(Level.SEVERE, "Konnte Master-Datei nicht speichern: " + masterFile, exception);
+        }
+    }
+
+    private void markMasterInitializationRequired(final String reason) {
+        masterDirty = true;
+        masterFileLocked = false;
+        if (reason == null || reason.isBlank()) {
+            masterInitializationReason = "Unbekannter Grund";
+        } else {
+            masterInitializationReason = reason;
         }
     }
 
