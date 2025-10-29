@@ -317,8 +317,10 @@ public final class ProgressDataManager {
             if (existing == null) {
                 plugin.getLogger().log(Level.WARNING,
                         "Neuer Master-Eintrag '" + normalized.getId()
-                                + "' wurde ignoriert, da die Master-Datei bereits fixiert ist.");
-                return null;
+                                + "' wurde ignoriert, da die Master-Datei bereits fixiert ist."
+                                + " Spielerfortschritt wird trotzdem gespeichert, aktualisieren Sie die Master-Datei manuell.");
+                masterEntries.put(normalized.getId(), normalized);
+                return normalized;
             }
             return existing;
         }
