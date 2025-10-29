@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -388,27 +389,73 @@ public final class ProgressDataManager {
             return null;
         }
         final AdvancementDisplay display = advancement.getDisplay();
-        final String title = display != null ? componentToPlain(display.title()) : id;
-        final String description = display != null ? componentToPlain(display.description()) : null;
+        final Component titleComponent = resolveDisplayComponent(display, "title", "getTitle");
+        final Component descriptionComponent = resolveDisplayComponent(display, "description", "getDescription");
+        final String title = titleComponent != null ? componentToPlain(titleComponent) : id;
+        final String description = descriptionComponent != null ? componentToPlain(descriptionComponent) : null;
         final String parentId = advancement.getParent() != null && advancement.getParent().getKey() != null
                 ? advancement.getParent().getKey().toString() : null;
-        final String icon = display != null ? stringifyItem(display.icon()) : null;
+        final ItemStack iconStack = resolveDisplayValue(display, ItemStack.class, "icon", "getIcon");
+        final String icon = iconStack != null ? stringifyItem(iconStack) : null;
         final Map<String, Object> attributes = new LinkedHashMap<>();
         if (display != null) {
-            attributes.put("announceToChat", display.doesAnnounceToChat());
-            attributes.put("showToast", display.doesShowToast());
-            attributes.put("hidden", display.isHidden());
-            final NamespacedKey background = display.background();
+            final Boolean announceToChat = resolveDisplayValue(display, Boolean.class,
+                    "doesAnnounceToChat", "shouldAnnounceToChat");
+            final Boolean showToast = resolveDisplayValue(display, Boolean.class,
+                    "doesShowToast", "shouldShowToast");
+            final Boolean hidden = resolveDisplayValue(display, Boolean.class, "isHidden");
+            attributes.put("announceToChat", Boolean.TRUE.equals(announceToChat));
+            attributes.put("showToast", Boolean.TRUE.equals(showToast));
+            attributes.put("hidden", Boolean.TRUE.equals(hidden));
+            final NamespacedKey background = resolveDisplayValue(display, NamespacedKey.class,
+                    "background", "getBackground");
             if (background != null) {
                 attributes.put("background", background.toString());
             }
-            if (display.frame() != null) {
-                attributes.put("frame", display.frame().name());
+            final Object frame = resolveDisplayValue(display, Object.class, "frame", "getFrame");
+            if (frame instanceof Enum<?>) {
+                attributes.put("frame", ((Enum<?>) frame).name());
+            } else if (frame != null) {
+                attributes.put("frame", frame.toString());
             }
         }
         final List<String> criteria = toSortedList(safeCriteria(advancement));
         return new MasterEntry(id, MasterEntry.EntryType.ADVANCEMENT, title, description, parentId, icon,
                 sanitizeAttributes(attributes), criteria);
+    }
+
+    private Component resolveDisplayComponent(final AdvancementDisplay display, final String... methodNames) {
+        return resolveDisplayValue(display, Component.class, methodNames);
+    }
+
+    private <T> T resolveDisplayValue(final AdvancementDisplay display, final Class<T> type,
+            final String... methodNames) {
+        if (display == null || type == null || methodNames == null || methodNames.length == 0) {
+            return null;
+        }
+        final Class<?> displayClass = display.getClass();
+        for (final String methodName : methodNames) {
+            if (methodName == null || methodName.isBlank()) {
+                continue;
+            }
+            try {
+                final Method method = displayClass.getMethod(methodName);
+                final Object value = method.invoke(display);
+                if (value == null) {
+                    return null;
+                }
+                if (type.isInstance(value)) {
+                    return type.cast(value);
+                }
+            } catch (final NoSuchMethodException ignored) {
+                // Try the next candidate name for the current server version.
+            } catch (final ReflectiveOperationException | IllegalArgumentException exception) {
+                plugin.getLogger().log(Level.FINEST,
+                        "Konnte AdvancementDisplay#" + methodName + " nicht aufrufen.", exception);
+                return null;
+            }
+        }
+        return null;
     }
 
     private Collection<String> safeCriteria(final Advancement advancement) {
