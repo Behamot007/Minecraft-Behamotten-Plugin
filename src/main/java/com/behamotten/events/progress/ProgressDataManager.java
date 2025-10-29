@@ -3,13 +3,13 @@ package com.behamotten.events.progress;
 import java.io.IOException;
 import java.io.Reader;
 import java.io.Writer;
+import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -22,8 +22,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.logging.Level;
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.NamespacedKey;
 import org.bukkit.advancement.Advancement;
 import org.bukkit.advancement.AdvancementDisplay;
@@ -389,8 +387,8 @@ public final class ProgressDataManager {
             return null;
         }
         final AdvancementDisplay display = advancement.getDisplay();
-        final Component titleComponent = resolveDisplayComponent(display, "title", "getTitle");
-        final Component descriptionComponent = resolveDisplayComponent(display, "description", "getDescription");
+        final Object titleComponent = resolveDisplayComponent(display, "title", "getTitle");
+        final Object descriptionComponent = resolveDisplayComponent(display, "description", "getDescription");
         final String title = titleComponent != null ? componentToPlain(titleComponent) : id;
         final String description = descriptionComponent != null ? componentToPlain(descriptionComponent) : null;
         final String parentId = advancement.getParent() != null && advancement.getParent().getKey() != null
@@ -424,13 +422,27 @@ public final class ProgressDataManager {
                 sanitizeAttributes(attributes), criteria);
     }
 
-    private Component resolveDisplayComponent(final AdvancementDisplay display, final String... methodNames) {
-        return resolveDisplayValue(display, Component.class, methodNames);
+    private Object resolveDisplayComponent(final AdvancementDisplay display, final String... methodNames) {
+        final Class<?> componentClass = loadClass("net.kyori.adventure.text.Component");
+        final Class<?> effectiveClass = componentClass != null ? componentClass : Object.class;
+        return resolveDisplayValueInternal(display, effectiveClass, methodNames);
     }
 
     private <T> T resolveDisplayValue(final AdvancementDisplay display, final Class<T> type,
             final String... methodNames) {
-        if (display == null || type == null || methodNames == null || methodNames.length == 0) {
+        if (type == null) {
+            return null;
+        }
+        final Object value = resolveDisplayValueInternal(display, type, methodNames);
+        if (value == null || !type.isInstance(value)) {
+            return null;
+        }
+        return type.cast(value);
+    }
+
+    private Object resolveDisplayValueInternal(final AdvancementDisplay display, final Class<?> type,
+            final String... methodNames) {
+        if (display == null || methodNames == null || methodNames.length == 0) {
             return null;
         }
         final Class<?> displayClass = display.getClass();
@@ -444,8 +456,8 @@ public final class ProgressDataManager {
                 if (value == null) {
                     return null;
                 }
-                if (type.isInstance(value)) {
-                    return type.cast(value);
+                if (type == null || type.isInstance(value)) {
+                    return value;
                 }
             } catch (final NoSuchMethodException ignored) {
                 // Try the next candidate name for the current server version.
@@ -499,14 +511,38 @@ public final class ProgressDataManager {
         return sanitized;
     }
 
-    private String componentToPlain(final Component component) {
+    private String componentToPlain(final Object component) {
         if (component == null) {
             return null;
         }
         try {
-            return PlainTextComponentSerializer.plainText().serialize(component);
+            final Class<?> componentClass = loadClass("net.kyori.adventure.text.Component");
+            final Class<?> serializerClass = loadClass(
+                    "net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer");
+            if (componentClass != null && serializerClass != null && componentClass.isInstance(component)) {
+                final Method plainTextMethod = serializerClass.getMethod("plainText");
+                final Object serializer = plainTextMethod.invoke(null);
+                if (serializer != null) {
+                    final Method serializeMethod = serializerClass.getMethod("serialize", componentClass);
+                    final Object result = serializeMethod.invoke(serializer, component);
+                    return result != null ? result.toString() : null;
+                }
+            }
         } catch (final Throwable throwable) {
-            return component.toString();
+            plugin.getLogger().log(Level.FINEST, "Konnte Component nicht als Klartext serialisieren.", throwable);
+        }
+        return component.toString();
+    }
+
+    private Class<?> loadClass(final String className) {
+        if (className == null || className.isBlank()) {
+            return null;
+        }
+        try {
+            final ClassLoader loader = ProgressDataManager.class.getClassLoader();
+            return Class.forName(className, false, loader);
+        } catch (final ClassNotFoundException | LinkageError exception) {
+            return null;
         }
     }
 
