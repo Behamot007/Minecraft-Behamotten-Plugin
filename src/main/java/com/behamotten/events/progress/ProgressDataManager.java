@@ -123,13 +123,15 @@ public final class ProgressDataManager {
                 builder.append(buffer, 0, read);
             }
             final Object parsed = SimpleJson.parse(builder.toString());
-            if (!(parsed instanceof Map<?, ?> root)) {
+            if (!(parsed instanceof Map<?, ?>)) {
                 return 0;
             }
+            final Map<?, ?> root = (Map<?, ?>) parsed;
             final Object questsObj = root.get("quests");
-            if (!(questsObj instanceof List<?> questList)) {
+            if (!(questsObj instanceof List<?>)) {
                 return 0;
             }
+            final List<?> questList = (List<?>) questsObj;
             int imported = 0;
             for (final Object questElement : questList) {
                 final QuestDefinition quest = parseQuestDefinition(questElement);
@@ -216,9 +218,11 @@ public final class ProgressDataManager {
         try {
             final String content = Files.readString(masterFile, StandardCharsets.UTF_8);
             final Object parsed = SimpleJson.parse(content);
-            if (parsed instanceof Map<?, ?> root) {
+            if (parsed instanceof Map<?, ?>) {
+                final Map<?, ?> root = (Map<?, ?>) parsed;
                 final Object entriesObj = root.get("entries");
-                if (entriesObj instanceof List<?> list) {
+                if (entriesObj instanceof List<?>) {
+                    final List<?> list = (List<?>) entriesObj;
                     for (final Object element : list) {
                         final MasterEntry entry = parseMasterEntry(element);
                         if (entry != null) {
@@ -254,13 +258,15 @@ public final class ProgressDataManager {
         try {
             final String content = Files.readString(file, StandardCharsets.UTF_8);
             final Object parsed = SimpleJson.parse(content);
-            if (!(parsed instanceof Map<?, ?> root)) {
+            if (!(parsed instanceof Map<?, ?>)) {
                 return new PlayerProgress(playerId, null, new LinkedHashMap<>()).normalize();
             }
+            final Map<?, ?> root = (Map<?, ?>) parsed;
             final String lastKnownName = asString(root.get("lastKnownName"));
             final Map<String, CompletionRecord> completions = new LinkedHashMap<>();
             final Object completionsObj = root.get("completions");
-            if (completionsObj instanceof List<?> list) {
+            if (completionsObj instanceof List<?>) {
+                final List<?> list = (List<?>) completionsObj;
                 for (final Object element : list) {
                     final CompletionRecord record = parseCompletionRecord(element);
                     if (record != null) {
@@ -299,9 +305,10 @@ public final class ProgressDataManager {
     }
 
     private MasterEntry parseMasterEntry(final Object value) {
-        if (!(value instanceof Map<?, ?> map)) {
+        if (!(value instanceof Map<?, ?>)) {
             return null;
         }
+        final Map<?, ?> map = (Map<?, ?>) value;
         final String id = asString(map.get("id"));
         if (id == null) {
             return null;
@@ -318,9 +325,10 @@ public final class ProgressDataManager {
     }
 
     private CompletionRecord parseCompletionRecord(final Object value) {
-        if (!(value instanceof Map<?, ?> map)) {
+        if (!(value instanceof Map<?, ?>)) {
             return null;
         }
+        final Map<?, ?> map = (Map<?, ?>) value;
         final String entryId = asString(map.get("entryId"));
         if (entryId == null) {
             return null;
@@ -336,9 +344,10 @@ public final class ProgressDataManager {
     }
 
     private QuestDefinition parseQuestDefinition(final Object value) {
-        if (!(value instanceof Map<?, ?> map)) {
+        if (!(value instanceof Map<?, ?>)) {
             return null;
         }
+        final Map<?, ?> map = (Map<?, ?>) value;
         final String id = asString(map.get("id"));
         if (id == null) {
             return null;
@@ -591,9 +600,10 @@ public final class ProgressDataManager {
     }
 
     private Map<String, Object> toAttributeMap(final Object value) {
-        if (!(value instanceof Map<?, ?> map)) {
+        if (!(value instanceof Map<?, ?>)) {
             return new LinkedHashMap<>();
         }
+        final Map<?, ?> map = (Map<?, ?>) value;
         final Map<String, Object> result = new LinkedHashMap<>();
         for (final Map.Entry<?, ?> entry : map.entrySet()) {
             if (entry.getKey() == null) {
@@ -605,9 +615,10 @@ public final class ProgressDataManager {
     }
 
     private Map<String, String> toStringMap(final Object value) {
-        if (!(value instanceof Map<?, ?> map)) {
+        if (!(value instanceof Map<?, ?>)) {
             return new LinkedHashMap<>();
         }
+        final Map<?, ?> map = (Map<?, ?>) value;
         final Map<String, String> result = new LinkedHashMap<>();
         for (final Map.Entry<?, ?> entry : map.entrySet()) {
             if (entry.getKey() == null || entry.getValue() == null) {
@@ -619,9 +630,10 @@ public final class ProgressDataManager {
     }
 
     private List<String> toStringList(final Object value) {
-        if (!(value instanceof Collection<?> collection)) {
+        if (!(value instanceof Collection<?>)) {
             return new ArrayList<>();
         }
+        final Collection<?> collection = (Collection<?>) value;
         final List<String> result = new ArrayList<>();
         for (final Object element : collection) {
             final String stringValue = asString(element);
