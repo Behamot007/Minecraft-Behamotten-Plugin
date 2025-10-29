@@ -1,30 +1,45 @@
 package org.bukkit.configuration;
 
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 
-public class ConfigurationSection {
-    private final Map<String, Object> values;
+public interface ConfigurationSection {
+    Set<String> getKeys(boolean deep);
 
-    public ConfigurationSection() {
-        this(new LinkedHashMap<>());
-    }
+    String getString(String key);
 
-    public ConfigurationSection(final Map<String, Object> values) {
-        this.values = new LinkedHashMap<>(values);
-    }
+    Map<String, Object> getValues();
 
-    public Set<String> getKeys(final boolean deep) {
-        return values.keySet();
-    }
+    /**
+     * Minimal in-memory implementation used by tests.
+     */
+    class MemoryConfigurationSection implements ConfigurationSection {
+        private final Map<String, Object> values;
 
-    public String getString(final String key) {
-        final Object value = values.get(key);
-        return value != null ? value.toString() : null;
-    }
+        public MemoryConfigurationSection() {
+            this(new LinkedHashMap<>());
+        }
 
-    public Map<String, Object> getValues() {
-        return values;
+        public MemoryConfigurationSection(final Map<String, Object> values) {
+            this.values = new LinkedHashMap<>(values);
+        }
+
+        @Override
+        public Set<String> getKeys(final boolean deep) {
+            return Collections.unmodifiableSet(values.keySet());
+        }
+
+        @Override
+        public String getString(final String key) {
+            final Object value = values.get(key);
+            return value != null ? value.toString() : null;
+        }
+
+        @Override
+        public Map<String, Object> getValues() {
+            return Collections.unmodifiableMap(values);
+        }
     }
 }

@@ -12,7 +12,7 @@ public class YamlConfiguration extends FileConfiguration {
     }
 
     public void createSection(final String path, final Map<String, Object> values) {
-        setSection(path, new ConfigurationSection(values));
+        setSection(path, new ConfigurationSection.MemoryConfigurationSection(values));
     }
 
     public void save(final File file) throws IOException {
