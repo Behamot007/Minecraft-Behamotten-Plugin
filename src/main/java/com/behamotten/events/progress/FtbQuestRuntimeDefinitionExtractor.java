@@ -92,8 +92,8 @@ final class FtbQuestRuntimeDefinitionExtractor {
             return viaMethod;
         }
         final Object fieldValue = readFieldValue(questFile, "chapters", "chapterList", "chapterMap");
-        if (fieldValue instanceof Map<?, ?> map) {
-            return map.values();
+        if (fieldValue instanceof Map<?, ?>) {
+            return ((Map<?, ?>) fieldValue).values();
         }
         if (fieldValue instanceof Collection<?>) {
             return (Collection<?>) fieldValue;
@@ -152,8 +152,8 @@ final class FtbQuestRuntimeDefinitionExtractor {
         if (fieldValue instanceof Collection<?>) {
             return (Collection<?>) fieldValue;
         }
-        if (fieldValue instanceof Map<?, ?> map) {
-            return map.values();
+        if (fieldValue instanceof Map<?, ?>) {
+            return ((Map<?, ?>) fieldValue).values();
         }
         return null;
     }
@@ -263,7 +263,8 @@ final class FtbQuestRuntimeDefinitionExtractor {
         if (tagsObj instanceof Collection<?>) {
             return stringifyCollection((Collection<?>) tagsObj);
         }
-        if (tagsObj instanceof Map<?, ?> map) {
+        if (tagsObj instanceof Map<?, ?>) {
+            final Map<?, ?> map = (Map<?, ?>) tagsObj;
             return stringifyCollection(map.keySet());
         }
         final Object fieldValue = readFieldValue(quest, "tags", "tagSet", "tagNames");
@@ -295,8 +296,8 @@ final class FtbQuestRuntimeDefinitionExtractor {
             if (value instanceof Collection<?>) {
                 return (Collection<?>) value;
             }
-            if (value instanceof Map<?, ?> map) {
-                return map.values();
+            if (value instanceof Map<?, ?>) {
+                return ((Map<?, ?>) value).values();
             }
             if (value != null && value.getClass().isArray()) {
                 return toCollection(value);
@@ -397,8 +398,11 @@ final class FtbQuestRuntimeDefinitionExtractor {
             final Method getString = component.getClass().getMethod("getString");
             getString.setAccessible(true);
             final Object value = getString.invoke(component);
-            if (value instanceof String stringValue && !stringValue.isBlank()) {
-                return stringValue;
+            if (value instanceof String) {
+                final String stringValue = (String) value;
+                if (!stringValue.isBlank()) {
+                    return stringValue;
+                }
             }
         } catch (final ReflectiveOperationException ignored) {
             // Fallback to toString() below.
@@ -433,8 +437,8 @@ final class FtbQuestRuntimeDefinitionExtractor {
         if (value == null) {
             return null;
         }
-        if (value instanceof String stringValue) {
-            return stringValue;
+        if (value instanceof String) {
+            return (String) value;
         }
         if (value instanceof Number || value instanceof Boolean) {
             return value.toString();
