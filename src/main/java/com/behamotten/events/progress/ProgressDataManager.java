@@ -193,6 +193,23 @@ public final class ProgressDataManager {
         if (definitionsPresent && translationsPresent) {
             return;
         }
+        final Optional<FtbQuestDefinitionExtractor.QuestExtractionResult> runtimeExtraction =
+                extractQuestsFromRuntime();
+        if (runtimeExtraction.isPresent()) {
+            final FtbQuestDefinitionExtractor.QuestExtractionResult extraction = runtimeExtraction.get();
+            final Instant generatedAt = Instant.now();
+            final String sourceDescription = "ftbquests-runtime";
+            try {
+                writeQuestDefinitionArtifacts(extraction, generatedAt, sourceDescription, definitionFile,
+                        translationFile, null);
+                plugin.getLogger().info(() -> "FTB-Quest-Definitionen aus Laufzeitdaten erzeugt: " + definitionFile
+                        + " (" + extraction.getQuestCount() + " Quests)");
+            } catch (final IOException exception) {
+                plugin.getLogger().log(Level.SEVERE,
+                        "Konnte Quest-Definitionen nicht aus Laufzeitdaten schreiben: " + definitionFile, exception);
+            }
+            return;
+        }
         final Path questsDirectory = locateFtbQuestsDirectory();
         if (questsDirectory == null || !Files.isDirectory(questsDirectory)) {
             plugin.getLogger().warning(() -> "FTB-Quest-Verzeichnis nicht gefunden: " + questsDirectory);
@@ -208,10 +225,8 @@ public final class ProgressDataManager {
             }
             final Instant generatedAt = Instant.now();
             final String sourceDescription = describeSourceDirectory(questsDirectory);
-            writeJsonFile(definitionFile, result.toDefinitionDocument(generatedAt, sourceDescription));
-            if (translationFile != null) {
-                writeJsonFile(translationFile, result.toTranslationDocument(generatedAt, sourceDescription));
-            }
+            writeQuestDefinitionArtifacts(result, generatedAt, sourceDescription, definitionFile, translationFile,
+                    null);
             plugin.getLogger().info(() -> "FTB-Quest-Definitionen erzeugt: " + definitionFile + " (" + result.getQuestCount()
                     + " Quests)");
         } catch (final IOException exception) {
@@ -279,11 +294,111 @@ public final class ProgressDataManager {
     }
 
     private Path locateFtbQuestsDirectory() {
-        final Path dataFolder = plugin.getDataFolder().toPath();
-        final Path pluginsFolder = dataFolder.getParent();
-        final Path serverRoot = pluginsFolder != null ? pluginsFolder.getParent() : null;
-        final Path baseDirectory = serverRoot != null ? serverRoot : dataFolder;
-        return baseDirectory.resolve("config").resolve("ftbquests").resolve("quests");
+        final Path dataFolder = plugin.getDataFolder().toPath().toAbsolutePath();
+        final List<Path> candidates = new ArrayList<>();
+        Path current = dataFolder;
+        for (int depth = 0; depth < 5 && current != null; depth++, current = current.getParent()) {
+            collectQuestDirectoryCandidates(current, candidates);
+        }
+        for (final Path candidate : candidates) {
+            if (candidate != null && Files.isDirectory(candidate)) {
+                return candidate;
+            }
+        }
+        if (!candidates.isEmpty()) {
+            plugin.getLogger().fine(() -> "Durchsuchte FTB-Quest-Verzeichnisse: "
+                    + candidates.stream().map(path -> path.toString().replace('\\', '/'))
+                            .reduce((left, right) -> left + ", " + right).orElse(""));
+        }
+        return null;
+    }
+
+    private void collectQuestDirectoryCandidates(final Path base, final List<Path> candidates) {
+        if (base == null) {
+            return;
+        }
+        final Path normalizedBase = base.toAbsolutePath().normalize();
+        candidates.add(normalizedBase.resolve("config").resolve("ftbquests").resolve("quests"));
+        candidates.add(normalizedBase.resolve("ftbquests").resolve("quests"));
+        candidates.add(normalizedBase.resolve("world").resolve("ftbquests").resolve("quests"));
+        candidates.add(normalizedBase.resolve("world").resolve("serverconfig").resolve("ftbquests").resolve("quests"));
+        candidates.add(normalizedBase.resolve("world").resolve("config").resolve("ftbquests").resolve("quests"));
+        candidates.add(normalizedBase.resolve("serverconfig").resolve("ftbquests").resolve("quests"));
+        candidates.add(normalizedBase.resolve("defaultconfigs").resolve("ftbquests").resolve("quests"));
+        candidates.add(normalizedBase.resolve("local").resolve("ftbquests").resolve("quests"));
+    }
+
+    private Optional<FtbQuestDefinitionExtractor.QuestExtractionResult> extractQuestsFromRuntime() {
+        try {
+            final FtbQuestRuntimeDefinitionExtractor extractor = new FtbQuestRuntimeDefinitionExtractor(
+                    plugin.getLogger());
+            final Optional<FtbQuestDefinitionExtractor.QuestExtractionResult> extraction = extractor.extract()
+                    .filter(result -> !result.isEmpty());
+            extraction.ifPresent(result -> plugin.getLogger().info(
+                    () -> "FTB-Quest-Daten aus Laufzeit ermittelt: " + result.getQuestCount() + " Quests."));
+            return extraction;
+        } catch (final RuntimeException exception) {
+            plugin.getLogger().log(Level.WARNING,
+                    "Fehler bei der Extraktion der FTB-Quest-Daten über die Laufzeit-API.", exception);
+            return Optional.empty();
+        }
+    }
+
+    private ExtractionContext determineQuestExtraction() throws IOException {
+        final Optional<FtbQuestDefinitionExtractor.QuestExtractionResult> runtimeExtraction =
+                extractQuestsFromRuntime();
+        if (runtimeExtraction.isPresent()) {
+            return new ExtractionContext(runtimeExtraction.get(), "ftbquests-runtime", null);
+        }
+        final Path questsDirectory = locateFtbQuestsDirectory();
+        if (questsDirectory == null || !Files.isDirectory(questsDirectory)) {
+            final String warning = "FTB-Quest-Verzeichnis nicht gefunden: " + questsDirectory;
+            return new ExtractionContext(null, null, warning);
+        }
+        plugin.getLogger().info(() -> "Erzeuge FTB-Quest-Definitionen aus SNBT-Dateien: " + questsDirectory);
+        final FtbQuestDefinitionExtractor extractor = new FtbQuestDefinitionExtractor(plugin.getLogger());
+        final FtbQuestDefinitionExtractor.QuestExtractionResult extraction = extractor.extract(questsDirectory);
+        if (extraction.isEmpty()) {
+            final String warning = "Keine FTB-Quests im Verzeichnis gefunden: " + questsDirectory;
+            return new ExtractionContext(null, describeSourceDirectory(questsDirectory), warning);
+        }
+        final String sourceDescription = describeSourceDirectory(questsDirectory);
+        return new ExtractionContext(extraction, sourceDescription, null);
+    }
+
+    private void writeQuestDefinitionArtifacts(final FtbQuestDefinitionExtractor.QuestExtractionResult extraction,
+            final Instant generatedAt, final String sourceDescription, final Path definitionFile,
+            final Path translationFile, final List<String> errors) throws IOException {
+        if (extraction == null || definitionFile == null) {
+            return;
+        }
+        writeJsonFile(definitionFile, extraction.toDefinitionDocument(generatedAt, sourceDescription));
+        if (translationFile == null) {
+            return;
+        }
+        try {
+            writeJsonFile(translationFile, extraction.toTranslationDocument(generatedAt, sourceDescription));
+        } catch (final IOException exception) {
+            plugin.getLogger().log(Level.SEVERE,
+                    "Konnte Quest-Übersetzungsdatei nicht schreiben: " + translationFile, exception);
+            if (errors != null) {
+                errors.add("Quest-Übersetzungsdatei konnte nicht geschrieben werden: " + translationFile + " ("
+                        + exception.getMessage() + ")");
+            }
+        }
+    }
+
+    private static final class ExtractionContext {
+        final FtbQuestDefinitionExtractor.QuestExtractionResult extraction;
+        final String sourceDescription;
+        final String warning;
+
+        ExtractionContext(final FtbQuestDefinitionExtractor.QuestExtractionResult extraction,
+                final String sourceDescription, final String warning) {
+            this.extraction = extraction;
+            this.sourceDescription = sourceDescription;
+            this.warning = warning;
+        }
     }
 
     private String describeSourceDirectory(final Path questsDirectory) {
@@ -338,31 +453,26 @@ public final class ProgressDataManager {
         deleteLegacyMasterFile();
         resetMaster(questMaster, "Neuaufbau angefordert");
         deleteMasterFile(questMaster);
-        final Path questsDirectory = locateFtbQuestsDirectory();
-        if (questsDirectory == null || !Files.isDirectory(questsDirectory)) {
-            final String warning = "FTB-Quest-Verzeichnis nicht gefunden: " + questsDirectory;
-            plugin.getLogger().warning(warning);
-            markMasterInitializationRequired(questMaster, "FTB-Quest-Verzeichnis fehlt");
-            return new QuestMasterResult(0, 0, 0, List.of(warning), List.of(warning));
-        }
         final List<String> errors = new ArrayList<>();
         try {
-            final FtbQuestDefinitionExtractor extractor = new FtbQuestDefinitionExtractor(plugin.getLogger());
-            final FtbQuestDefinitionExtractor.QuestExtractionResult extraction = extractor.extract(questsDirectory);
+            final ExtractionContext extractionContext = determineQuestExtraction();
+            if (extractionContext.extraction == null) {
+                final String warning = extractionContext.warning != null ? extractionContext.warning
+                        : "FTB-Quest-Daten konnten nicht gefunden werden.";
+                plugin.getLogger().warning(warning);
+                markMasterInitializationRequired(questMaster, "FTB-Quest-Daten fehlen");
+                return new QuestMasterResult(0, 0, 0, List.of(warning), List.of(warning));
+            }
+            final FtbQuestDefinitionExtractor.QuestExtractionResult extraction = extractionContext.extraction;
             final Instant generatedAt = Instant.now();
-            final String sourceDescription = describeSourceDirectory(questsDirectory);
-            writeJsonFile(questDefinitionsFile, extraction.toDefinitionDocument(generatedAt, sourceDescription));
-            if (questTranslationsFile != null) {
-                try {
-                    writeJsonFile(questTranslationsFile,
-                            extraction.toTranslationDocument(generatedAt, sourceDescription));
-                } catch (final IOException translationException) {
-                    plugin.getLogger().log(Level.SEVERE,
-                            "Konnte Quest-Übersetzungsdatei nicht schreiben: " + questTranslationsFile,
-                            translationException);
-                    errors.add("Quest-Übersetzungsdatei konnte nicht geschrieben werden: " + questTranslationsFile + " ("
-                            + translationException.getMessage() + ")");
-                }
+            try {
+                writeQuestDefinitionArtifacts(extraction, generatedAt, extractionContext.sourceDescription,
+                        questDefinitionsFile, questTranslationsFile, errors);
+            } catch (final IOException exception) {
+                plugin.getLogger().log(Level.SEVERE,
+                        "Konnte Quest-Definitionsdateien nicht schreiben: " + questDefinitionsFile, exception);
+                errors.add("Quest-Definitionen konnten nicht geschrieben werden: " + questDefinitionsFile + " ("
+                        + exception.getMessage() + ")");
             }
             final int importedQuests = importQuestDefinitions(questDefinitionsFile);
             if (!saveMasterIfDirty(questMaster)) {
