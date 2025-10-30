@@ -16,6 +16,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -41,6 +42,7 @@ public final class ProgressDataManager {
     private static final String QUEST_DEFINITIONS_FILE_NAME = "ftbquests_definitions.json";
     private static final String PLAYER_UPDATE_LOG_FILE_NAME = "progress_player_updates.log";
     private static final String QUEST_TRANSLATIONS_FILE_NAME = "ftbquests_translations.json";
+    private static final String ADVANCEMENT_TRANSLATIONS_FILE_NAME = "advancements_translations.json";
 
     private final JavaPlugin plugin;
     private final Path legacyMasterFile;
@@ -48,6 +50,7 @@ public final class ProgressDataManager {
     private final Path questDefinitionsFile;
     private final Path playerUpdateLogFile;
     private final Path questTranslationsFile;
+    private final Path advancementTranslationsFile;
     private final MasterFileContext advancementMaster;
     private final MasterFileContext questMaster;
     private final Map<UUID, PlayerProgress> playerProgress = new LinkedHashMap<>();
@@ -61,6 +64,7 @@ public final class ProgressDataManager {
         this.questDefinitionsFile = dataFolder.resolve(QUEST_DEFINITIONS_FILE_NAME);
         this.playerUpdateLogFile = dataFolder.resolve(PLAYER_UPDATE_LOG_FILE_NAME);
         this.questTranslationsFile = dataFolder.resolve(QUEST_TRANSLATIONS_FILE_NAME);
+        this.advancementTranslationsFile = dataFolder.resolve(ADVANCEMENT_TRANSLATIONS_FILE_NAME);
         this.advancementMaster = new MasterFileContext(
                 dataFolder.resolve(ADVANCEMENT_MASTER_FILE_NAME), MasterEntry.EntryType.ADVANCEMENT);
         this.questMaster = new MasterFileContext(
@@ -229,6 +233,51 @@ public final class ProgressDataManager {
                 StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
     }
 
+    private List<Map<String, Object>> buildAdvancementTranslations() {
+        final List<Map<String, Object>> entries = new ArrayList<>();
+        final Set<String> seenKeys = new LinkedHashSet<>();
+        for (final MasterEntry entry : advancementMaster.entries.values()) {
+            if (entry == null) {
+                continue;
+            }
+            addTranslationEntry(entries, seenKeys, entry.getId(), "name", entry.getName());
+            addTranslationEntry(entries, seenKeys, entry.getId(), "description", entry.getDescription());
+        }
+        return entries;
+    }
+
+    private void addTranslationEntry(final List<Map<String, Object>> entries, final Set<String> seenKeys,
+            final String id, final String field, final String value) {
+        if (id == null || field == null || value == null || value.isBlank()) {
+            return;
+        }
+        final String key = id + "#" + field;
+        if (!seenKeys.add(key)) {
+            return;
+        }
+        final Map<String, Object> translation = new LinkedHashMap<>();
+        translation.put("id", id);
+        translation.put("field", field);
+        translation.put("de", value);
+        translation.put("en", value);
+        entries.add(translation);
+    }
+
+    private void writeTranslationFile(final Path file, final Instant generatedAt, final String sourceDescription,
+            final List<Map<String, Object>> entries) throws IOException {
+        if (file == null) {
+            return;
+        }
+        final List<Map<String, Object>> sanitizedEntries = entries != null ? new ArrayList<>(entries)
+                : new ArrayList<>();
+        final Map<String, Object> root = new LinkedHashMap<>();
+        root.put("generatedAt", (generatedAt != null ? generatedAt : Instant.now()).toString());
+        root.put("source", sourceDescription != null ? sourceDescription : "");
+        root.put("entryCount", sanitizedEntries.size());
+        root.put("entries", sanitizedEntries);
+        writeJsonFile(file, root);
+    }
+
     private Path locateFtbQuestsDirectory() {
         final Path dataFolder = plugin.getDataFolder().toPath();
         final Path pluginsFolder = dataFolder.getParent();
@@ -254,19 +303,90 @@ public final class ProgressDataManager {
         return questsDirectory.toAbsolutePath().toString().replace('\\', '/');
     }
 
-    public MasterRefreshResult refreshMasterExports(final Iterator<Advancement> advancements) {
-        plugin.getLogger().info("Starte Neuinitialisierung der Fortschritts-Masterdateien.");
+    public AdvancementMasterResult regenerateAdvancementMaster(final Iterator<Advancement> advancements) {
+        plugin.getLogger().info("Starte Aktualisierung der Advancement-Masterdatei.");
         deleteLegacyMasterFile();
-        resetMaster(advancementMaster, "Neuinitialisierung angefordert");
-        resetMaster(questMaster, "Neuinitialisierung angefordert");
+        resetMaster(advancementMaster, "Neuaufbau angefordert");
         deleteMasterFile(advancementMaster);
-        deleteMasterFile(questMaster);
         final int synchronizedAdvancements = synchronizeAdvancements(advancements);
-        final int importedQuests = importQuestDefinitions();
-        finalizeMasterExport();
-        plugin.getLogger().info(() -> "Neuinitialisierung abgeschlossen. Advancements: " + synchronizedAdvancements
-                + ", Quests: " + importedQuests);
-        return new MasterRefreshResult(synchronizedAdvancements, importedQuests);
+        final List<Map<String, Object>> translationEntries = buildAdvancementTranslations();
+        final Instant generatedAt = Instant.now();
+        final String sourceDescription = "advancements";
+        final List<String> errors = new ArrayList<>();
+        if (!saveMasterIfDirty(advancementMaster)) {
+            errors.add("Konnte Advancement-Masterdatei nicht schreiben: " + advancementMaster.file);
+        }
+        try {
+            writeTranslationFile(advancementTranslationsFile, generatedAt, sourceDescription, translationEntries);
+        } catch (final IOException exception) {
+            plugin.getLogger().log(Level.SEVERE,
+                    "Konnte Advancement-Übersetzungsdatei nicht schreiben: " + advancementTranslationsFile, exception);
+            errors.add("Übersetzungsdatei konnte nicht geschrieben werden: " + advancementTranslationsFile + " ("
+                    + exception.getMessage() + ")");
+        }
+        if (errors.isEmpty()) {
+            plugin.getLogger().info(() -> "Advancement-Masterdatei aktualisiert: " + synchronizedAdvancements
+                    + " Einträge, " + translationEntries.size() + " Übersetzungen.");
+        } else {
+            plugin.getLogger().warning(() -> "Advancement-Masterdatei wurde mit Fehlern erstellt. Bitte prüfen Sie die Logs.");
+        }
+        return new AdvancementMasterResult(synchronizedAdvancements, translationEntries.size(), errors);
+    }
+
+    public QuestMasterResult regenerateQuestMaster() {
+        plugin.getLogger().info("Starte Aktualisierung der Quest-Masterdatei.");
+        deleteLegacyMasterFile();
+        resetMaster(questMaster, "Neuaufbau angefordert");
+        deleteMasterFile(questMaster);
+        final Path questsDirectory = locateFtbQuestsDirectory();
+        if (questsDirectory == null || !Files.isDirectory(questsDirectory)) {
+            final String warning = "FTB-Quest-Verzeichnis nicht gefunden: " + questsDirectory;
+            plugin.getLogger().warning(warning);
+            markMasterInitializationRequired(questMaster, "FTB-Quest-Verzeichnis fehlt");
+            return new QuestMasterResult(0, 0, 0, List.of(warning), List.of(warning));
+        }
+        final List<String> errors = new ArrayList<>();
+        try {
+            final FtbQuestDefinitionExtractor extractor = new FtbQuestDefinitionExtractor(plugin.getLogger());
+            final FtbQuestDefinitionExtractor.QuestExtractionResult extraction = extractor.extract(questsDirectory);
+            final Instant generatedAt = Instant.now();
+            final String sourceDescription = describeSourceDirectory(questsDirectory);
+            writeJsonFile(questDefinitionsFile, extraction.toDefinitionDocument(generatedAt, sourceDescription));
+            if (questTranslationsFile != null) {
+                try {
+                    writeJsonFile(questTranslationsFile,
+                            extraction.toTranslationDocument(generatedAt, sourceDescription));
+                } catch (final IOException translationException) {
+                    plugin.getLogger().log(Level.SEVERE,
+                            "Konnte Quest-Übersetzungsdatei nicht schreiben: " + questTranslationsFile,
+                            translationException);
+                    errors.add("Quest-Übersetzungsdatei konnte nicht geschrieben werden: " + questTranslationsFile + " ("
+                            + translationException.getMessage() + ")");
+                }
+            }
+            final int importedQuests = importQuestDefinitions(questDefinitionsFile);
+            if (!saveMasterIfDirty(questMaster)) {
+                errors.add("Konnte Quest-Masterdatei nicht schreiben: " + questMaster.file);
+            }
+            final List<String> warnings = extraction.getWarnings();
+            for (final String warning : warnings) {
+                plugin.getLogger().warning(() -> "FTB-Quest-Warnung: " + warning);
+            }
+            if (errors.isEmpty()) {
+                plugin.getLogger().info(() -> "Quest-Masterdatei aktualisiert: " + importedQuests + " Quests in "
+                        + extraction.getChapterCount() + " Kapiteln.");
+            } else {
+                plugin.getLogger()
+                        .warning(() -> "Quest-Masterdatei wurde mit Fehlern erstellt. Bitte prüfen Sie die Logs.");
+            }
+            return new QuestMasterResult(importedQuests, extraction.getChapterCount(),
+                    extraction.getTranslationCount(), warnings, errors);
+        } catch (final IOException exception) {
+            plugin.getLogger().log(Level.SEVERE, "Konnte Quest-Masterdatei nicht erstellen.", exception);
+            markMasterInitializationRequired(questMaster, "Fehler beim Export der Quests");
+            errors.add("Fehler beim Export der Quest-Daten: " + exception.getMessage());
+            return new QuestMasterResult(0, 0, 0, List.of(), errors);
+        }
     }
 
     public void finalizeMasterExport() {
@@ -820,15 +940,15 @@ public final class ProgressDataManager {
         return candidate.toString();
     }
 
-    private void saveMasterIfDirty(final MasterFileContext context) {
+    private boolean saveMasterIfDirty(final MasterFileContext context) {
         if (context.locked) {
             plugin.getLogger().info(() -> context.entryType + "-Master-Datei ist fixiert und aktuell: " + context.file);
             context.dirty = false;
-            return;
+            return true;
         }
         if (!context.dirty) {
             plugin.getLogger().info(() -> context.entryType + "-Master-Datei ist bereits aktuell: " + context.file);
-            return;
+            return true;
         }
         if (context.initializationReason != null && !context.initializationReason.isBlank()) {
             final String reason = context.initializationReason;
@@ -857,9 +977,14 @@ public final class ProgressDataManager {
             context.initializationReason = null;
             plugin.getLogger().info(
                     () -> context.entryType + "-Master-Datei erfolgreich aktualisiert: " + context.file);
+            return true;
         } catch (final IOException | RuntimeException exception) {
             plugin.getLogger().log(Level.SEVERE,
                     "Konnte " + context.entryType + "-Master-Datei nicht speichern: " + context.file, exception);
+            context.locked = false;
+            context.dirty = true;
+            context.initializationReason = "Fehler beim Speichern";
+            return false;
         }
     }
 
@@ -1080,28 +1205,84 @@ public final class ProgressDataManager {
         }
     }
 
-    public static final class MasterRefreshResult {
+    public static final class AdvancementMasterResult {
         private final int advancementCount;
-        private final int questCount;
+        private final int translationCount;
+        private final List<String> errors;
 
-        public MasterRefreshResult(final int advancementCount, final int questCount) {
+        public AdvancementMasterResult(final int advancementCount, final int translationCount,
+                final List<String> errors) {
             this.advancementCount = advancementCount;
-            this.questCount = questCount;
+            this.translationCount = translationCount;
+            this.errors = errors != null ? List.copyOf(errors) : List.of();
         }
 
         public int getAdvancementCount() {
             return advancementCount;
         }
 
-        public int getQuestCount() {
-            return questCount;
+        public int getTranslationCount() {
+            return translationCount;
+        }
+
+        public List<String> getErrors() {
+            return errors;
         }
 
         @Override
         public String toString() {
-            return "MasterRefreshResult{" +
+            return "AdvancementMasterResult{" +
                     "advancementCount=" + advancementCount +
-                    ", questCount=" + questCount +
+                    ", translationCount=" + translationCount +
+                    ", errors=" + errors +
+                    '}';
+        }
+    }
+
+    public static final class QuestMasterResult {
+        private final int questCount;
+        private final int chapterCount;
+        private final int translationCount;
+        private final List<String> warnings;
+        private final List<String> errors;
+
+        public QuestMasterResult(final int questCount, final int chapterCount, final int translationCount,
+                final List<String> warnings, final List<String> errors) {
+            this.questCount = questCount;
+            this.chapterCount = chapterCount;
+            this.translationCount = translationCount;
+            this.warnings = warnings != null ? List.copyOf(warnings) : List.of();
+            this.errors = errors != null ? List.copyOf(errors) : List.of();
+        }
+
+        public int getQuestCount() {
+            return questCount;
+        }
+
+        public int getChapterCount() {
+            return chapterCount;
+        }
+
+        public int getTranslationCount() {
+            return translationCount;
+        }
+
+        public List<String> getWarnings() {
+            return warnings;
+        }
+
+        public List<String> getErrors() {
+            return errors;
+        }
+
+        @Override
+        public String toString() {
+            return "QuestMasterResult{" +
+                    "questCount=" + questCount +
+                    ", chapterCount=" + chapterCount +
+                    ", translationCount=" + translationCount +
+                    ", warnings=" + warnings +
+                    ", errors=" + errors +
                     '}';
         }
     }
