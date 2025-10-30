@@ -406,6 +406,18 @@ final class FtbQuestDefinitionExtractor {
             return quests.size();
         }
 
+        int getChapterCount() {
+            return chapters.size();
+        }
+
+        int getTranslationCount() {
+            return translations.size();
+        }
+
+        List<String> getWarnings() {
+            return List.copyOf(warnings);
+        }
+
         void finalizeEntries() {
             quests.sort(Comparator
                     .comparing((Map<String, Object> map) -> Objects.toString(map.get("id"), "")));

@@ -30,6 +30,8 @@ Das Skript verwendet das im Repository enthaltene `gradle/wrapper/gradle-wrapper
 | `/unsetevents` | `behamotten.unsetevents` (Standard: erlaubt) | Entfernt den ausführenden Spieler aus der Eventliste. |
 | `/getalleventuser` | `behamotten.getall` (Standard: nur Operatoren) | Listet alle registrierten Spieler auf. |
 | `/getalleventuser @r` | `behamotten.getall` (Standard: nur Operatoren) | Gibt einen zufälligen registrierten Spieler zurück. |
+| `/generatequestmaster` | `behamotten.progress.quest` (Standard: nur Operatoren) | Aktualisiert die Quest-Masterdatei und erstellt optionale Übersetzungen neu. |
+| `/generateadvancementmaster` | `behamotten.progress.advancement` (Standard: nur Operatoren) | Aktualisiert die Advancement-Masterdatei sowie die zugehörigen Übersetzungen. |
 
 ## Datenpersistenz
 
@@ -41,14 +43,21 @@ Zusätzlich zum Event-Teilnahmestatus exportiert das Plugin strukturierte JSON-D
 
 ### Speicherort
 
-- **Master-Datei**: `plugins/BehamottenEventTools/progress_master.json`
+- **Advancement-Masterdatei**: `plugins/BehamottenEventTools/progress_master_advancements.json`
+- **Quest-Masterdatei**: `plugins/BehamottenEventTools/progress_master_quests.json`
+- **Advancement-Übersetzungen**: `plugins/BehamottenEventTools/advancements_translations.json`
+- **Quest-Übersetzungen**: `plugins/BehamottenEventTools/ftbquests_translations.json`
+- **FTB-Quest-Definitionen**: `plugins/BehamottenEventTools/ftbquests_definitions.json`
 - **Spielerdateien**: `plugins/BehamottenEventTools/progress_players/<uuid>.json`
 - **Änderungsprotokoll**: `plugins/BehamottenEventTools/progress_player_updates.log`
-- **(Optional) Quest-Definitionen**: `plugins/BehamottenEventTools/ftbquests_definitions.json`
 
-Beim ersten Serverstart erzeugt das Plugin automatisch die Master-Datei aus allen bekannten Advancements und (optional) Quest-Definitionen und fixiert sie anschließend. Danach wird diese Datei nicht mehr verändert. Spielerabschlüsse werden für **alle** Spieler kontinuierlich aufgezeichnet. Jede Änderung führt zu einer Aktualisierung der jeweiligen Spielerdatei und zu einem neuen Eintrag im Änderungsprotokoll. Beim Herunterfahren (`onDisable`) wird ein abschließender Schreibvorgang für noch offene Spieler durchgeführt.
+Die Masterdateien werden **nicht** mehr automatisch beim Serverstart erzeugt. Verwenden Sie stattdessen die Verwaltungsbefehle `/generateadvancementmaster` und `/generatequestmaster`, um die jeweiligen Exporte neu zu schreiben. Beide Befehle melden den Erfolg direkt im Chat und geben bei Problemen eine Fehlermeldung aus. Detaillierte Ursachen (z. B. fehlende Schreibrechte) finden Sie im Server-Log.
 
-### Struktur der Master-Datei (`progress_master.json`)
+Der Quest-Befehl liest die SNBT-Dateien aus `config/ftbquests/quests/`, konvertiert sie in `ftbquests_definitions.json` und erstellt anschließend Master- und Übersetzungsdateien. Der Advancement-Befehl exportiert alle aktuell registrierten Advancements und erzeugt gleichzeitig eine Übersetzungsdatei mit deutschen und englischen Platzhaltern.
+
+Spielerabschlüsse werden weiterhin für **alle** Spieler kontinuierlich aufgezeichnet. Jede Änderung führt zu einer Aktualisierung der jeweiligen Spielerdatei und zu einem neuen Eintrag im Änderungsprotokoll. Beim Herunterfahren (`onDisable`) wird ein abschließender Schreibvorgang für noch offene Spieler durchgeführt.
+
+### Struktur der Master-Dateien (`progress_master_advancements.json` / `progress_master_quests.json`)
 
 ```jsonc
 {
@@ -123,6 +132,32 @@ Beim ersten Serverstart erzeugt das Plugin automatisch die Master-Datei aus alle
 | `completions[].completedCriteria` | Array<String>, optional | Erfüllte Kriterien/Tasks. |
 | `completions[].details` | Objekt, optional | Zusätzliche Metadaten (z. B. `source`, Weltname, Belohnungsinformationen). |
 
+### Struktur der Übersetzungsdateien (`advancements_translations.json` / `ftbquests_translations.json`)
+
+```jsonc
+{
+  "generatedAt": "2024-11-10T17:32:11.235Z",
+  "source": "advancements",
+  "entryCount": 2,
+  "entries": [
+    {
+      "id": "minecraft:story/root",
+      "field": "name",
+      "de": "Das Abenteuer beginnt",
+      "en": "The Adventure Begins"
+    },
+    {
+      "id": "minecraft:story/root",
+      "field": "description",
+      "de": "Betritt die Welt",
+      "en": "Enter the world"
+    }
+  ]
+}
+```
+
+Jeder Eintrag enthält die referenzierte ID, das Feld (`name` oder `description`) sowie deutsche und englische Übersetzungen. Das Quest-Äquivalent folgt der gleichen Struktur.
+
 ### Struktur des Änderungsprotokolls (`progress_player_updates.log`)
 
 Das Änderungsprotokoll ist eine einfache JSON-Lines-Datei. Für jede gespeicherte Änderung wird eine Zeile mit folgenden Feldern angefügt:
@@ -139,7 +174,7 @@ Das Änderungsprotokoll ist eine einfache JSON-Lines-Datei. Für jede gespeicher
 
 ### Import von FTB-Quests (`ftbquests_definitions.json`)
 
-Wird im Datenordner eine Datei mit folgender Struktur abgelegt, importiert das Plugin die Quest-Einträge beim Start und fügt sie der Master-Datei hinzu:
+Beim Ausführen von `/generatequestmaster` erzeugt das Plugin – falls noch nicht vorhanden – eine Definitionsdatei mit folgender Struktur (alternativ kann eine manuell gepflegte Datei im gleichen Format verwendet werden):
 
 ```jsonc
 {
