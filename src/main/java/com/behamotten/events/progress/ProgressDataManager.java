@@ -255,15 +255,37 @@ public final class ProgressDataManager {
             if (entry == null) {
                 continue;
             }
-            addTranslationEntry(entries, seenKeys, entry.getId(), "name", entry.getName());
-            addTranslationEntry(entries, seenKeys, entry.getId(), "description", entry.getDescription());
+            addTranslationEntry(entries, seenKeys, entry, "name", entry.getName());
+            addTranslationEntry(entries, seenKeys, entry, "description", entry.getDescription());
         }
         return entries;
     }
 
     private void addTranslationEntry(final List<Map<String, Object>> entries, final Set<String> seenKeys,
-            final String id, final String field, final String value) {
-        if (id == null || field == null || value == null || value.isBlank()) {
+            final MasterEntry entry, final String field, final String fallbackValue) {
+        if (entry == null || field == null) {
+            return;
+        }
+        final Map<String, Object> attributes = entry.getAttributes();
+        final String translationKey = asString(attributes.get(field + "TranslationKey"));
+        final Map<String, String> translations = toStringMap(attributes.get(field + "Translations"));
+        final String id = translationKey != null && !translationKey.isBlank() ? translationKey : entry.getId();
+        addTranslationEntry(entries, seenKeys, id, field, translations.get("de"), translations.get("en"),
+                fallbackValue);
+    }
+
+    private void addTranslationEntry(final List<Map<String, Object>> entries, final Set<String> seenKeys,
+            final String id, final String field, final String deValue, final String enValue, final String fallbackValue) {
+        if (id == null || field == null) {
+            return;
+        }
+        final String sanitizedFallback = sanitizeTranslationValue(fallbackValue);
+        final String german = sanitizeTranslationValue(deValue);
+        final String english = sanitizeTranslationValue(enValue);
+        final String resolvedGerman = german != null ? german : sanitizedFallback;
+        final String resolvedEnglish = english != null ? english : sanitizedFallback;
+        if ((resolvedGerman == null || resolvedGerman.isBlank()) && (resolvedEnglish == null
+                || resolvedEnglish.isBlank())) {
             return;
         }
         final String key = id + "#" + field;
@@ -273,9 +295,17 @@ public final class ProgressDataManager {
         final Map<String, Object> translation = new LinkedHashMap<>();
         translation.put("id", id);
         translation.put("field", field);
-        translation.put("de", value);
-        translation.put("en", value);
+        translation.put("de", resolvedGerman != null ? resolvedGerman : resolvedEnglish);
+        translation.put("en", resolvedEnglish != null ? resolvedEnglish : resolvedGerman);
         entries.add(translation);
+    }
+
+    private String sanitizeTranslationValue(final String value) {
+        if (value == null) {
+            return null;
+        }
+        final String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private void writeTranslationFile(final Path file, final Instant generatedAt, final String sourceDescription,
@@ -754,8 +784,13 @@ public final class ProgressDataManager {
         final AdvancementDisplay display = advancement.getDisplay();
         final Object titleComponent = resolveDisplayComponent(display, "title", "getTitle");
         final Object descriptionComponent = resolveDisplayComponent(display, "description", "getDescription");
-        final String title = titleComponent != null ? componentToPlain(titleComponent) : id;
-        final String description = descriptionComponent != null ? componentToPlain(descriptionComponent) : null;
+        final TranslationSupport.Translation titleTranslation = TranslationSupport
+                .fromComponent(titleComponent, plugin.getLogger());
+        final TranslationSupport.Translation descriptionTranslation = TranslationSupport
+                .fromComponent(descriptionComponent, plugin.getLogger());
+        titleTranslation.ensureFallback(id);
+        final String title = titleTranslation.englishOr(id);
+        final String description = descriptionTranslation.fallbackOr(null);
         final String parentId = resolveParentId(advancement);
         final ItemStack iconStack = resolveDisplayValue(display, ItemStack.class, "icon", "getIcon");
         final String icon = iconStack != null ? stringifyItem(iconStack) : null;
@@ -780,6 +815,20 @@ public final class ProgressDataManager {
             } else if (frame != null) {
                 attributes.put("frame", frame.toString());
             }
+        }
+        final Map<String, String> titleTranslations = titleTranslation.toMap();
+        if (!titleTranslations.isEmpty()) {
+            attributes.put("titleTranslations", new LinkedHashMap<>(titleTranslations));
+        }
+        if (titleTranslation.getTranslationKey() != null) {
+            attributes.put("titleTranslationKey", titleTranslation.getTranslationKey());
+        }
+        final Map<String, String> descriptionTranslations = descriptionTranslation.toMap();
+        if (!descriptionTranslations.isEmpty()) {
+            attributes.put("descriptionTranslations", new LinkedHashMap<>(descriptionTranslations));
+        }
+        if (descriptionTranslation.getTranslationKey() != null) {
+            attributes.put("descriptionTranslationKey", descriptionTranslation.getTranslationKey());
         }
         final List<String> criteria = toSortedList(safeCriteria(advancement));
         return new MasterEntry(id, MasterEntry.EntryType.ADVANCEMENT, title, description, parentId, icon,
