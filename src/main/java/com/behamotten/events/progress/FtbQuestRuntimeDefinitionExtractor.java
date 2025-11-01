@@ -44,7 +44,7 @@ final class FtbQuestRuntimeDefinitionExtractor {
                 return Optional.empty();
             }
             final FtbQuestDefinitionExtractor.QuestExtractionResult result =
-                    new FtbQuestDefinitionExtractor.QuestExtractionResult();
+                    new FtbQuestDefinitionExtractor.QuestExtractionResult(logger);
             int chapterIndex = 0;
             for (final Object chapter : chapters) {
                 if (chapter == null) {
@@ -127,10 +127,6 @@ final class FtbQuestRuntimeDefinitionExtractor {
         result.addChapter(chapterInfo);
         chapterTitleTranslation.ensureFallback(chapterTitle);
         result.addTranslation("chapter:" + chapterId, "title", chapterTitleTranslation);
-        if (chapterDescription != null && !chapterDescription.isBlank()) {
-            chapterDescriptionTranslation.ensureFallback(chapterDescription);
-            result.addTranslation("chapter:" + chapterId, "description", chapterDescriptionTranslation);
-        }
 
         final Collection<?> quests = extractQuestCollection(chapter);
         if (quests == null || quests.isEmpty()) {
@@ -226,13 +222,6 @@ final class FtbQuestRuntimeDefinitionExtractor {
         }
         result.addQuest(questEntry);
         result.addTranslation(questId, "name", questTitleTranslation);
-        if (description != null && !description.isBlank()) {
-            result.addTranslation(questId, "description", questDescriptionTranslation);
-        }
-        if (subtitle != null && !subtitle.isBlank()) {
-            subtitleTranslation.ensureFallback(subtitle);
-            result.addTranslation(questId, "subtitle", subtitleTranslation);
-        }
     }
 
     private Collection<?> extractTaskCollection(final Object quest) {
