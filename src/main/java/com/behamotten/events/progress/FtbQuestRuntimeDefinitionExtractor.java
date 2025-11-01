@@ -106,10 +106,16 @@ final class FtbQuestRuntimeDefinitionExtractor {
         final String chapterIdRaw = firstNonBlank(extractString(chapter, "getCodeString", "getCodeName", "getId"),
                 asString(readFieldValue(chapter, "filename", "file", "id")), "chapter" + (index + 1));
         final String chapterId = safeSegment(chapterIdRaw);
-        final String chapterTitle = firstNonBlank(componentToString(invoke(chapter, "getTitle")),
+        final Object chapterTitleComponent = invoke(chapter, "getTitle");
+        final TranslationSupport.Translation chapterTitleTranslation = TranslationSupport
+                .fromComponent(chapterTitleComponent, logger);
+        final String chapterTitle = firstNonBlank(chapterTitleTranslation.fallbackOr(null),
                 componentToString(invoke(chapter, "getName")), componentToString(readFieldValue(chapter, "title")),
                 chapterIdRaw);
-        final String chapterDescription = firstNonBlank(componentToString(invoke(chapter, "getDescription")),
+        final Object chapterDescriptionComponent = invoke(chapter, "getDescription");
+        final TranslationSupport.Translation chapterDescriptionTranslation = TranslationSupport
+                .fromComponent(chapterDescriptionComponent, logger);
+        final String chapterDescription = firstNonBlank(chapterDescriptionTranslation.fallbackOr(null),
                 componentToString(readFieldValue(chapter, "description")));
 
         final Map<String, Object> chapterInfo = new LinkedHashMap<>();
@@ -119,9 +125,11 @@ final class FtbQuestRuntimeDefinitionExtractor {
             chapterInfo.put("description", chapterDescription);
         }
         result.addChapter(chapterInfo);
-        result.addTranslation("chapter:" + chapterId, "title", chapterTitle);
+        chapterTitleTranslation.ensureFallback(chapterTitle);
+        result.addTranslation("chapter:" + chapterId, "title", chapterTitleTranslation);
         if (chapterDescription != null && !chapterDescription.isBlank()) {
-            result.addTranslation("chapter:" + chapterId, "description", chapterDescription);
+            chapterDescriptionTranslation.ensureFallback(chapterDescription);
+            result.addTranslation("chapter:" + chapterId, "description", chapterDescriptionTranslation);
         }
 
         final Collection<?> quests = extractQuestCollection(chapter);
@@ -165,11 +173,20 @@ final class FtbQuestRuntimeDefinitionExtractor {
         final String rawQuestId = firstNonBlank(extractString(quest, "getCodeString", "getCodeName", "getId"),
                 asString(readFieldValue(quest, "id")), "quest" + (index + 1));
         final String questId = result.nextUniqueQuestId(chapterId, rawQuestId);
-        final String questName = firstNonBlank(componentToString(invoke(quest, "getTitle")),
+        final Object questTitleComponent = invoke(quest, "getTitle");
+        final TranslationSupport.Translation questTitleTranslation = TranslationSupport
+                .fromComponent(questTitleComponent, logger);
+        final String questName = firstNonBlank(questTitleTranslation.fallbackOr(null),
                 componentToString(invoke(quest, "getName")), rawQuestId);
-        final String description = firstNonBlank(componentToString(invoke(quest, "getDescription")),
+        final Object descriptionComponent = invoke(quest, "getDescription");
+        final TranslationSupport.Translation questDescriptionTranslation = TranslationSupport
+                .fromComponent(descriptionComponent, logger);
+        final String description = firstNonBlank(questDescriptionTranslation.fallbackOr(null),
                 componentToString(readFieldValue(quest, "description")));
-        final String subtitle = firstNonBlank(componentToString(invoke(quest, "getSubtitle")),
+        final Object subtitleComponent = invoke(quest, "getSubtitle");
+        final TranslationSupport.Translation subtitleTranslation = TranslationSupport
+                .fromComponent(subtitleComponent, logger);
+        final String subtitle = firstNonBlank(subtitleTranslation.fallbackOr(null),
                 componentToString(readFieldValue(quest, "subtitle")));
         final String icon = extractIcon(quest);
         final List<String> criteria = describeTasks(extractTaskCollection(quest));
@@ -188,10 +205,12 @@ final class FtbQuestRuntimeDefinitionExtractor {
 
         final Map<String, Object> questEntry = new LinkedHashMap<>();
         questEntry.put("id", questId);
-        questEntry.put("name", questName);
+        questTitleTranslation.ensureFallback(questName);
+        questEntry.put("name", questTitleTranslation.englishOr(questName));
         questEntry.put("chapter", chapterTitle);
+        questDescriptionTranslation.ensureFallback(description);
         if (description != null && !description.isBlank()) {
-            questEntry.put("description", description);
+            questEntry.put("description", questDescriptionTranslation.englishOr(description));
         }
         if (icon != null && !icon.isBlank()) {
             questEntry.put("icon", icon);
@@ -206,12 +225,13 @@ final class FtbQuestRuntimeDefinitionExtractor {
             questEntry.put("tags", tags);
         }
         result.addQuest(questEntry);
-        result.addTranslation(questId, "name", questName);
+        result.addTranslation(questId, "name", questTitleTranslation);
         if (description != null && !description.isBlank()) {
-            result.addTranslation(questId, "description", description);
+            result.addTranslation(questId, "description", questDescriptionTranslation);
         }
         if (subtitle != null && !subtitle.isBlank()) {
-            result.addTranslation(questId, "subtitle", subtitle);
+            subtitleTranslation.ensureFallback(subtitle);
+            result.addTranslation(questId, "subtitle", subtitleTranslation);
         }
     }
 
