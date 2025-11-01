@@ -279,6 +279,7 @@ public final class ProgressDataManager {
         if (id == null || field == null) {
             return;
         }
+        final String key = id + "#" + field;
         final String sanitizedFallback = sanitizeTranslationValue(fallbackValue);
         final String german = sanitizeTranslationValue(deValue);
         final String english = sanitizeTranslationValue(enValue);
@@ -286,10 +287,13 @@ public final class ProgressDataManager {
         final String resolvedEnglish = english != null ? english : sanitizedFallback;
         if ((resolvedGerman == null || resolvedGerman.isBlank()) && (resolvedEnglish == null
                 || resolvedEnglish.isBlank())) {
+            plugin.getLogger().warning(() -> "Übersetzungseintrag übersprungen: " + key
+                    + " – kein Text verfügbar (Feld: " + field + ", Quelle: "
+                    + (fallbackValue != null ? fallbackValue : "unbekannt") + ")");
             return;
         }
-        final String key = id + "#" + field;
         if (!seenKeys.add(key)) {
+            plugin.getLogger().fine(() -> "Übersetzungseintrag ignoriert, da bereits vorhanden: " + key);
             return;
         }
         final Map<String, Object> translation = new LinkedHashMap<>();
@@ -297,6 +301,10 @@ public final class ProgressDataManager {
         translation.put("field", field);
         translation.put("de", resolvedGerman != null ? resolvedGerman : resolvedEnglish);
         translation.put("en", resolvedEnglish != null ? resolvedEnglish : resolvedGerman);
+        if (resolvedEnglish == null || resolvedEnglish.isBlank()) {
+            plugin.getLogger().warning(
+                    () -> "Übersetzungseintrag ohne englischen Text, deutscher Wert wird verwendet: " + key);
+        }
         entries.add(translation);
     }
 
@@ -458,6 +466,10 @@ public final class ProgressDataManager {
         final Instant generatedAt = Instant.now();
         final String sourceDescription = "advancements";
         final List<String> errors = new ArrayList<>();
+        if (translationEntries.isEmpty()) {
+            plugin.getLogger().warning(
+                    "Advancement-Übersetzungen konnten nicht erstellt werden – Ergebnisliste ist leer.");
+        }
         if (!saveMasterIfDirty(advancementMaster)) {
             errors.add("Konnte Advancement-Masterdatei nicht schreiben: " + advancementMaster.file);
         }
@@ -790,7 +802,8 @@ public final class ProgressDataManager {
                 .fromComponent(descriptionComponent, plugin.getLogger());
         titleTranslation.ensureFallback(id);
         final String title = titleTranslation.englishOr(id);
-        final String description = descriptionTranslation.fallbackOr(null);
+        final String description = descriptionTranslation
+                .englishOr(descriptionTranslation.fallbackOr(null));
         final String parentId = resolveParentId(advancement);
         final ItemStack iconStack = resolveDisplayValue(display, ItemStack.class, "icon", "getIcon");
         final String icon = iconStack != null ? stringifyItem(iconStack) : null;
