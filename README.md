@@ -45,15 +45,15 @@ Zusätzlich zum Event-Teilnahmestatus exportiert das Plugin strukturierte JSON-D
 
 - **Advancement-Masterdatei**: `plugins/BehamottenEventTools/progress_master_advancements.json`
 - **Quest-Masterdatei**: `plugins/BehamottenEventTools/progress_master_quests.json`
-- **Advancement-Übersetzungen**: `plugins/BehamottenEventTools/advancements_translations.json`
-- **Quest-Übersetzungen**: `plugins/BehamottenEventTools/ftbquests_translations.json`
+- **Englische Advancement-Ressourcen**: `plugins/BehamottenEventTools/advancements_en_us.json`
+- **Englische Quest-Ressourcen**: `plugins/BehamottenEventTools/ftbquests_en_us.json`
 - **FTB-Quest-Definitionen**: `plugins/BehamottenEventTools/ftbquests_definitions.json`
 - **Spielerdateien**: `plugins/BehamottenEventTools/progress_players/<uuid>.json`
 - **Änderungsprotokoll**: `plugins/BehamottenEventTools/progress_player_updates.log`
 
 Die Masterdateien werden **nicht** mehr automatisch beim Serverstart erzeugt. Verwenden Sie stattdessen die Verwaltungsbefehle `/generateadvancementmaster` und `/generatequestmaster`, um die jeweiligen Exporte neu zu schreiben. Beide Befehle melden den Erfolg direkt im Chat und geben bei Problemen eine Fehlermeldung aus. Detaillierte Ursachen (z. B. fehlende Schreibrechte) finden Sie im Server-Log.
 
-Der Quest-Befehl liest die SNBT-Dateien aus `config/ftbquests/quests/`, konvertiert sie in `ftbquests_definitions.json` und erstellt anschließend Master- und Übersetzungsdateien. Der Advancement-Befehl exportiert alle aktuell registrierten Advancements und erzeugt gleichzeitig eine Übersetzungsdatei mit deutschen und englischen Platzhaltern.
+Der Quest-Befehl liest die SNBT-Dateien aus `config/ftbquests/quests/`, konvertiert sie in `ftbquests_definitions.json` und erzeugt zusätzlich eine englische Ressourcendatei mit Quest-Titeln. Der Advancement-Befehl exportiert alle aktuell registrierten Advancements und erstellt parallel eine Ressourcendatei mit englischen Titeln und Beschreibungen.
 
 Spielerabschlüsse werden weiterhin für **alle** Spieler kontinuierlich aufgezeichnet. Jede Änderung führt zu einer Aktualisierung der jeweiligen Spielerdatei und zu einem neuen Eintrag im Änderungsprotokoll. Beim Herunterfahren (`onDisable`) wird ein abschließender Schreibvorgang für noch offene Spieler durchgeführt.
 
@@ -132,31 +132,24 @@ Spielerabschlüsse werden weiterhin für **alle** Spieler kontinuierlich aufgeze
 | `completions[].completedCriteria` | Array<String>, optional | Erfüllte Kriterien/Tasks. |
 | `completions[].details` | Objekt, optional | Zusätzliche Metadaten (z. B. `source`, Weltname, Belohnungsinformationen). |
 
-### Struktur der Übersetzungsdateien (`advancements_translations.json` / `ftbquests_translations.json`)
+### Struktur der englischen Ressourcendateien (`advancements_en_us.json` / `ftbquests_en_us.json`)
 
 ```jsonc
 {
   "generatedAt": "2024-11-10T17:32:11.235Z",
   "source": "advancements",
-  "entryCount": 2,
+  "entryCount": 1,
   "entries": [
     {
       "id": "minecraft:story/root",
-      "field": "name",
-      "de": "Das Abenteuer beginnt",
-      "en": "The Adventure Begins"
-    },
-    {
-      "id": "minecraft:story/root",
-      "field": "description",
-      "de": "Betritt die Welt",
-      "en": "Enter the world"
+      "title": "The Adventure Begins",
+      "description": "Enter the world"
     }
   ]
 }
 ```
 
-Jeder Eintrag enthält die referenzierte ID, das Feld (`name` oder `description`) sowie deutsche und englische Übersetzungen. Das Quest-Äquivalent folgt der gleichen Struktur.
+Die Quest-Ressourcendatei besitzt dieselben Metadaten, ihre Einträge enthalten jedoch ausschließlich `id` und `title`. Alle Texte liegen bereits in Englisch vor und dienen als Grundlage für externe Ressourcen-Pakete.
 
 ### Struktur des Änderungsprotokolls (`progress_player_updates.log`)
 

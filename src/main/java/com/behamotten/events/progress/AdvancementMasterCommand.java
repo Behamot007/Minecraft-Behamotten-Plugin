@@ -34,8 +34,8 @@ public final class AdvancementMasterCommand implements CommandExecutor {
             if (sender != null) {
                 if (result.getErrors().isEmpty()) {
                     sender.sendMessage(ChatColor.GREEN + "Advancement-Masterdatei wurde aktualisiert (" + result
-                            .getAdvancementCount() + " Einträge, " + result.getTranslationCount()
-                            + " Übersetzungen).");
+                            .getAdvancementCount() + " Einträge, " + result.getEnglishResourceCount()
+                            + " englische Texte).");
                 } else {
                     sender.sendMessage(ChatColor.RED + "Die Advancement-Masterdatei konnte nicht vollständig aktualisiert"
                             + " werden: " + String.join(", ", result.getErrors()));

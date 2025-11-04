@@ -13,10 +13,10 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -41,16 +41,16 @@ public final class ProgressDataManager {
     private static final String PLAYERS_DIRECTORY_NAME = "progress_players";
     private static final String QUEST_DEFINITIONS_FILE_NAME = "ftbquests_definitions.json";
     private static final String PLAYER_UPDATE_LOG_FILE_NAME = "progress_player_updates.log";
-    private static final String QUEST_TRANSLATIONS_FILE_NAME = "ftbquests_translations.json";
-    private static final String ADVANCEMENT_TRANSLATIONS_FILE_NAME = "advancements_translations.json";
+    private static final String QUEST_ENGLISH_RESOURCE_FILE_NAME = "ftbquests_en_us.json";
+    private static final String ADVANCEMENT_ENGLISH_RESOURCE_FILE_NAME = "advancements_en_us.json";
 
     private final JavaPlugin plugin;
     private final Path legacyMasterFile;
     private final Path playersDirectory;
     private final Path questDefinitionsFile;
     private final Path playerUpdateLogFile;
-    private final Path questTranslationsFile;
-    private final Path advancementTranslationsFile;
+    private final Path questEnglishResourceFile;
+    private final Path advancementEnglishResourceFile;
     private final MasterFileContext advancementMaster;
     private final MasterFileContext questMaster;
     private final Map<UUID, PlayerProgress> playerProgress = new LinkedHashMap<>();
@@ -63,8 +63,8 @@ public final class ProgressDataManager {
         this.playersDirectory = dataFolder.resolve(PLAYERS_DIRECTORY_NAME);
         this.questDefinitionsFile = dataFolder.resolve(QUEST_DEFINITIONS_FILE_NAME);
         this.playerUpdateLogFile = dataFolder.resolve(PLAYER_UPDATE_LOG_FILE_NAME);
-        this.questTranslationsFile = dataFolder.resolve(QUEST_TRANSLATIONS_FILE_NAME);
-        this.advancementTranslationsFile = dataFolder.resolve(ADVANCEMENT_TRANSLATIONS_FILE_NAME);
+        this.questEnglishResourceFile = dataFolder.resolve(QUEST_ENGLISH_RESOURCE_FILE_NAME);
+        this.advancementEnglishResourceFile = dataFolder.resolve(ADVANCEMENT_ENGLISH_RESOURCE_FILE_NAME);
         this.advancementMaster = new MasterFileContext(
                 dataFolder.resolve(ADVANCEMENT_MASTER_FILE_NAME), MasterEntry.EntryType.ADVANCEMENT);
         this.questMaster = new MasterFileContext(
@@ -123,7 +123,7 @@ public final class ProgressDataManager {
     }
 
     public int importQuestDefinitions(final Path definitionFile) {
-        ensureQuestDefinitions(definitionFile, questTranslationsFile);
+        ensureQuestDefinitions(definitionFile, questEnglishResourceFile);
         if (definitionFile == null || !Files.exists(definitionFile)) {
             plugin.getLogger().severe(() -> "Quest-Definitionen nicht gefunden: " + definitionFile);
             markMasterInitializationRequired(questMaster, "Quest-Definitionen fehlen");
@@ -184,13 +184,13 @@ public final class ProgressDataManager {
         }
     }
 
-    private void ensureQuestDefinitions(final Path definitionFile, final Path translationFile) {
+    private void ensureQuestDefinitions(final Path definitionFile, final Path englishResourceFile) {
         if (definitionFile == null) {
             return;
         }
         final boolean definitionsPresent = Files.exists(definitionFile);
-        final boolean translationsPresent = translationFile != null && Files.exists(translationFile);
-        if (definitionsPresent && translationsPresent) {
+        final boolean englishResourcesPresent = englishResourceFile != null && Files.exists(englishResourceFile);
+        if (definitionsPresent && englishResourcesPresent) {
             return;
         }
         final Optional<FtbQuestDefinitionExtractor.QuestExtractionResult> runtimeExtraction =
@@ -201,7 +201,7 @@ public final class ProgressDataManager {
             final String sourceDescription = "ftbquests-runtime";
             try {
                 writeQuestDefinitionArtifacts(extraction, generatedAt, sourceDescription, definitionFile,
-                        translationFile, null);
+                        englishResourceFile, null);
                 plugin.getLogger().info(() -> "FTB-Quest-Definitionen aus Laufzeitdaten erzeugt: " + definitionFile
                         + " (" + extraction.getQuestCount() + " Quests)");
             } catch (final IOException exception) {
@@ -225,7 +225,7 @@ public final class ProgressDataManager {
             }
             final Instant generatedAt = Instant.now();
             final String sourceDescription = describeSourceDirectory(questsDirectory);
-            writeQuestDefinitionArtifacts(result, generatedAt, sourceDescription, definitionFile, translationFile,
+            writeQuestDefinitionArtifacts(result, generatedAt, sourceDescription, definitionFile, englishResourceFile,
                     null);
             plugin.getLogger().info(() -> "FTB-Quest-Definitionen erzeugt: " + definitionFile + " (" + result.getQuestCount()
                     + " Quests)");
@@ -248,67 +248,37 @@ public final class ProgressDataManager {
                 StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
     }
 
-    private List<Map<String, Object>> buildAdvancementTranslations() {
+    private List<Map<String, Object>> buildAdvancementEnglishResources() {
         final List<Map<String, Object>> entries = new ArrayList<>();
-        final Set<String> seenKeys = new LinkedHashSet<>();
         for (final MasterEntry entry : advancementMaster.entries.values()) {
             if (entry == null) {
                 continue;
             }
-            addTranslationEntry(entries, seenKeys, entry, "name", entry.getName());
-            addTranslationEntry(entries, seenKeys, entry, "description", entry.getDescription());
+            final String id = entry.getId();
+            if (id == null || id.isBlank()) {
+                plugin.getLogger().severe("Advancement ohne Kennung konnte nicht in die englische Ressource übernommen werden.");
+                continue;
+            }
+            final Map<String, Object> resource = new LinkedHashMap<>();
+            resource.put("id", id);
+            final String title = sanitizeEnglishValue(entry.getName());
+            if (title == null) {
+                plugin.getLogger().severe(() -> "Advancement ohne englischen Titel entdeckt: " + id);
+                resource.put("title", id);
+            } else {
+                resource.put("title", title);
+            }
+            final String description = sanitizeEnglishValue(entry.getDescription());
+            if (description != null) {
+                resource.put("description", description);
+            }
+            entries.add(resource);
         }
+        entries.sort(Comparator.comparing(map -> Objects.toString(map.get("id"), "")));
         return entries;
     }
 
-    private void addTranslationEntry(final List<Map<String, Object>> entries, final Set<String> seenKeys,
-            final MasterEntry entry, final String field, final String fallbackValue) {
-        if (entry == null || field == null) {
-            return;
-        }
-        final Map<String, Object> attributes = entry.getAttributes();
-        final String translationKey = asString(attributes.get(field + "TranslationKey"));
-        final Map<String, String> translations = toStringMap(attributes.get(field + "Translations"));
-        final String id = translationKey != null && !translationKey.isBlank() ? translationKey : entry.getId();
-        addTranslationEntry(entries, seenKeys, id, field, translations.get("de"), translations.get("en"),
-                fallbackValue);
-    }
-
-    private void addTranslationEntry(final List<Map<String, Object>> entries, final Set<String> seenKeys,
-            final String id, final String field, final String deValue, final String enValue, final String fallbackValue) {
-        if (id == null || field == null) {
-            return;
-        }
-        final String key = id + "#" + field;
-        final String sanitizedFallback = sanitizeTranslationValue(fallbackValue);
-        final String german = sanitizeTranslationValue(deValue);
-        final String english = sanitizeTranslationValue(enValue);
-        final String resolvedGerman = german != null ? german : sanitizedFallback;
-        final String resolvedEnglish = english != null ? english : sanitizedFallback;
-        if ((resolvedGerman == null || resolvedGerman.isBlank()) && (resolvedEnglish == null
-                || resolvedEnglish.isBlank())) {
-            plugin.getLogger().warning(() -> "Übersetzungseintrag übersprungen: " + key
-                    + " – kein Text verfügbar (Feld: " + field + ", Quelle: "
-                    + (fallbackValue != null ? fallbackValue : "unbekannt") + ")");
-            return;
-        }
-        if (!seenKeys.add(key)) {
-            plugin.getLogger().fine(() -> "Übersetzungseintrag ignoriert, da bereits vorhanden: " + key);
-            return;
-        }
-        final Map<String, Object> translation = new LinkedHashMap<>();
-        translation.put("id", id);
-        translation.put("field", field);
-        translation.put("de", resolvedGerman != null ? resolvedGerman : resolvedEnglish);
-        translation.put("en", resolvedEnglish != null ? resolvedEnglish : resolvedGerman);
-        if (resolvedEnglish == null || resolvedEnglish.isBlank()) {
-            plugin.getLogger().warning(
-                    () -> "Übersetzungseintrag ohne englischen Text, deutscher Wert wird verwendet: " + key);
-        }
-        entries.add(translation);
-    }
-
-    private String sanitizeTranslationValue(final String value) {
+    private String sanitizeEnglishValue(final String value) {
         if (value == null) {
             return null;
         }
@@ -316,13 +286,14 @@ public final class ProgressDataManager {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
-    private void writeTranslationFile(final Path file, final Instant generatedAt, final String sourceDescription,
+    private void writeEnglishResourceFile(final Path file, final Instant generatedAt, final String sourceDescription,
             final List<Map<String, Object>> entries) throws IOException {
         if (file == null) {
             return;
         }
         final List<Map<String, Object>> sanitizedEntries = entries != null ? new ArrayList<>(entries)
                 : new ArrayList<>();
+        sanitizedEntries.sort(Comparator.comparing(map -> Objects.toString(map.get("id"), "")));
         final Map<String, Object> root = new LinkedHashMap<>();
         root.put("generatedAt", (generatedAt != null ? generatedAt : Instant.now()).toString());
         root.put("source", sourceDescription != null ? sourceDescription : "");
@@ -406,21 +377,21 @@ public final class ProgressDataManager {
 
     private void writeQuestDefinitionArtifacts(final FtbQuestDefinitionExtractor.QuestExtractionResult extraction,
             final Instant generatedAt, final String sourceDescription, final Path definitionFile,
-            final Path translationFile, final List<String> errors) throws IOException {
+            final Path englishResourceFile, final List<String> errors) throws IOException {
         if (extraction == null || definitionFile == null) {
             return;
         }
         writeJsonFile(definitionFile, extraction.toDefinitionDocument(generatedAt, sourceDescription));
-        if (translationFile == null) {
+        if (englishResourceFile == null) {
             return;
         }
         try {
-            writeJsonFile(translationFile, extraction.toTranslationDocument(generatedAt, sourceDescription));
+            writeJsonFile(englishResourceFile, extraction.toEnglishResourceDocument(generatedAt, sourceDescription));
         } catch (final IOException exception) {
             plugin.getLogger().log(Level.SEVERE,
-                    "Konnte Quest-Übersetzungsdatei nicht schreiben: " + translationFile, exception);
+                    "Konnte englische Quest-Ressourcendatei nicht schreiben: " + englishResourceFile, exception);
             if (errors != null) {
-                errors.add("Quest-Übersetzungsdatei konnte nicht geschrieben werden: " + translationFile + " ("
+                errors.add("Quest-Ressourcendatei konnte nicht geschrieben werden: " + englishResourceFile + " ("
                         + exception.getMessage() + ")");
             }
         }
@@ -462,32 +433,34 @@ public final class ProgressDataManager {
         resetMaster(advancementMaster, "Neuaufbau angefordert");
         deleteMasterFile(advancementMaster);
         final int synchronizedAdvancements = synchronizeAdvancements(advancements);
-        final List<Map<String, Object>> translationEntries = buildAdvancementTranslations();
+        final List<Map<String, Object>> englishEntries = buildAdvancementEnglishResources();
         final Instant generatedAt = Instant.now();
         final String sourceDescription = "advancements";
         final List<String> errors = new ArrayList<>();
-        if (translationEntries.isEmpty()) {
+        if (englishEntries.isEmpty()) {
             plugin.getLogger().warning(
-                    "Advancement-Übersetzungen konnten nicht erstellt werden – Ergebnisliste ist leer.");
+                    "Englische Advancement-Ressourcen konnten nicht erstellt werden – Ergebnisliste ist leer.");
         }
         if (!saveMasterIfDirty(advancementMaster)) {
             errors.add("Konnte Advancement-Masterdatei nicht schreiben: " + advancementMaster.file);
         }
         try {
-            writeTranslationFile(advancementTranslationsFile, generatedAt, sourceDescription, translationEntries);
+            writeEnglishResourceFile(advancementEnglishResourceFile, generatedAt, sourceDescription, englishEntries);
         } catch (final IOException exception) {
             plugin.getLogger().log(Level.SEVERE,
-                    "Konnte Advancement-Übersetzungsdatei nicht schreiben: " + advancementTranslationsFile, exception);
-            errors.add("Übersetzungsdatei konnte nicht geschrieben werden: " + advancementTranslationsFile + " ("
+                    "Konnte englische Advancement-Ressourcendatei nicht schreiben: " + advancementEnglishResourceFile,
+                    exception);
+            errors.add("Englische Ressourcendatei konnte nicht geschrieben werden: "
+                    + advancementEnglishResourceFile + " ("
                     + exception.getMessage() + ")");
         }
         if (errors.isEmpty()) {
             plugin.getLogger().info(() -> "Advancement-Masterdatei aktualisiert: " + synchronizedAdvancements
-                    + " Einträge, " + translationEntries.size() + " Übersetzungen.");
+                    + " Einträge, " + englishEntries.size() + " Texte.");
         } else {
             plugin.getLogger().warning(() -> "Advancement-Masterdatei wurde mit Fehlern erstellt. Bitte prüfen Sie die Logs.");
         }
-        return new AdvancementMasterResult(synchronizedAdvancements, translationEntries.size(), errors);
+        return new AdvancementMasterResult(synchronizedAdvancements, englishEntries.size(), errors);
     }
 
     public QuestMasterResult regenerateQuestMaster() {
@@ -509,7 +482,7 @@ public final class ProgressDataManager {
             final Instant generatedAt = Instant.now();
             try {
                 writeQuestDefinitionArtifacts(extraction, generatedAt, extractionContext.sourceDescription,
-                        questDefinitionsFile, questTranslationsFile, errors);
+                        questDefinitionsFile, questEnglishResourceFile, errors);
             } catch (final IOException exception) {
                 plugin.getLogger().log(Level.SEVERE,
                         "Konnte Quest-Definitionsdateien nicht schreiben: " + questDefinitionsFile, exception);
@@ -532,7 +505,7 @@ public final class ProgressDataManager {
                         .warning(() -> "Quest-Masterdatei wurde mit Fehlern erstellt. Bitte prüfen Sie die Logs.");
             }
             return new QuestMasterResult(importedQuests, extraction.getChapterCount(),
-                    extraction.getTranslationCount(), warnings, errors);
+                    extraction.getEnglishResourceCount(), warnings, errors);
         } catch (final IOException exception) {
             plugin.getLogger().log(Level.SEVERE, "Konnte Quest-Masterdatei nicht erstellen.", exception);
             markMasterInitializationRequired(questMaster, "Fehler beim Export der Quests");
@@ -796,14 +769,14 @@ public final class ProgressDataManager {
         final AdvancementDisplay display = advancement.getDisplay();
         final Object titleComponent = resolveDisplayComponent(display, "title", "getTitle");
         final Object descriptionComponent = resolveDisplayComponent(display, "description", "getDescription");
-        final TranslationSupport.Translation titleTranslation = TranslationSupport
+        final EnglishTextSupport.ResolvedText titleText = EnglishTextSupport
                 .fromComponent(titleComponent, plugin.getLogger());
-        final TranslationSupport.Translation descriptionTranslation = TranslationSupport
+        final EnglishTextSupport.ResolvedText descriptionText = EnglishTextSupport
                 .fromComponent(descriptionComponent, plugin.getLogger());
-        titleTranslation.ensureFallback(id);
-        final String title = titleTranslation.englishOr(id);
-        final String description = descriptionTranslation
-                .englishOr(descriptionTranslation.fallbackOr(null));
+        titleText.ensureFallback(id);
+        descriptionText.ensureFallback(null);
+        final String title = titleText.englishOr(id);
+        final String description = descriptionText.englishOr(descriptionText.fallbackOr(null));
         final String parentId = resolveParentId(advancement);
         final ItemStack iconStack = resolveDisplayValue(display, ItemStack.class, "icon", "getIcon");
         final String icon = iconStack != null ? stringifyItem(iconStack) : null;
@@ -829,19 +802,11 @@ public final class ProgressDataManager {
                 attributes.put("frame", frame.toString());
             }
         }
-        final Map<String, String> titleTranslations = titleTranslation.toMap();
-        if (!titleTranslations.isEmpty()) {
-            attributes.put("titleTranslations", new LinkedHashMap<>(titleTranslations));
+        if (titleText.getTranslationKey() != null) {
+            attributes.put("titleTranslationKey", titleText.getTranslationKey());
         }
-        if (titleTranslation.getTranslationKey() != null) {
-            attributes.put("titleTranslationKey", titleTranslation.getTranslationKey());
-        }
-        final Map<String, String> descriptionTranslations = descriptionTranslation.toMap();
-        if (!descriptionTranslations.isEmpty()) {
-            attributes.put("descriptionTranslations", new LinkedHashMap<>(descriptionTranslations));
-        }
-        if (descriptionTranslation.getTranslationKey() != null) {
-            attributes.put("descriptionTranslationKey", descriptionTranslation.getTranslationKey());
+        if (descriptionText.getTranslationKey() != null) {
+            attributes.put("descriptionTranslationKey", descriptionText.getTranslationKey());
         }
         final List<String> criteria = toSortedList(safeCriteria(advancement));
         return new MasterEntry(id, MasterEntry.EntryType.ADVANCEMENT, title, description, parentId, icon,
@@ -1379,13 +1344,13 @@ public final class ProgressDataManager {
 
     public static final class AdvancementMasterResult {
         private final int advancementCount;
-        private final int translationCount;
+        private final int englishResourceCount;
         private final List<String> errors;
 
-        public AdvancementMasterResult(final int advancementCount, final int translationCount,
+        public AdvancementMasterResult(final int advancementCount, final int englishResourceCount,
                 final List<String> errors) {
             this.advancementCount = advancementCount;
-            this.translationCount = translationCount;
+            this.englishResourceCount = englishResourceCount;
             this.errors = errors != null ? List.copyOf(errors) : List.of();
         }
 
@@ -1393,8 +1358,8 @@ public final class ProgressDataManager {
             return advancementCount;
         }
 
-        public int getTranslationCount() {
-            return translationCount;
+        public int getEnglishResourceCount() {
+            return englishResourceCount;
         }
 
         public List<String> getErrors() {
@@ -1405,7 +1370,7 @@ public final class ProgressDataManager {
         public String toString() {
             return "AdvancementMasterResult{" +
                     "advancementCount=" + advancementCount +
-                    ", translationCount=" + translationCount +
+                    ", englishResourceCount=" + englishResourceCount +
                     ", errors=" + errors +
                     '}';
         }
@@ -1414,15 +1379,15 @@ public final class ProgressDataManager {
     public static final class QuestMasterResult {
         private final int questCount;
         private final int chapterCount;
-        private final int translationCount;
+        private final int englishResourceCount;
         private final List<String> warnings;
         private final List<String> errors;
 
-        public QuestMasterResult(final int questCount, final int chapterCount, final int translationCount,
+        public QuestMasterResult(final int questCount, final int chapterCount, final int englishResourceCount,
                 final List<String> warnings, final List<String> errors) {
             this.questCount = questCount;
             this.chapterCount = chapterCount;
-            this.translationCount = translationCount;
+            this.englishResourceCount = englishResourceCount;
             this.warnings = warnings != null ? List.copyOf(warnings) : List.of();
             this.errors = errors != null ? List.copyOf(errors) : List.of();
         }
@@ -1435,8 +1400,8 @@ public final class ProgressDataManager {
             return chapterCount;
         }
 
-        public int getTranslationCount() {
-            return translationCount;
+        public int getEnglishResourceCount() {
+            return englishResourceCount;
         }
 
         public List<String> getWarnings() {
@@ -1452,7 +1417,7 @@ public final class ProgressDataManager {
             return "QuestMasterResult{" +
                     "questCount=" + questCount +
                     ", chapterCount=" + chapterCount +
-                    ", translationCount=" + translationCount +
+                    ", englishResourceCount=" + englishResourceCount +
                     ", warnings=" + warnings +
                     ", errors=" + errors +
                     '}';
