@@ -74,7 +74,7 @@ final class FtbQuestDefinitionExtractor {
                 asString(compound.get("chapter")), baseName);
         final String chapterTitle = firstNonBlank(asString(compound.get("title")), asString(compound.get("name")),
                 chapterId);
-        final TranslationSupport.Translation chapterTitleTranslation = TranslationSupport
+        final EnglishTextSupport.ResolvedText chapterTitleText = EnglishTextSupport
                 .fromNullableString(chapterTitle);
         final Map<String, Object> chapterInfo = new LinkedHashMap<>();
         chapterInfo.put("id", safeSegment(chapterId));
@@ -85,8 +85,7 @@ final class FtbQuestDefinitionExtractor {
             chapterInfo.put("description", chapterDescription);
         }
         result.addChapter(chapterInfo);
-        chapterTitleTranslation.ensureFallback(chapterTitle);
-        result.addTranslation("chapter:" + chapterInfo.get("id"), "title", chapterTitleTranslation);
+        chapterTitleText.ensureFallback(chapterTitle);
 
         final Collection<Map<String, Object>> questList = extractQuestList(compound.get("quests"));
         if (questList.isEmpty()) {
@@ -105,13 +104,11 @@ final class FtbQuestDefinitionExtractor {
         final String rawQuestId = asString(quest.get("id"));
         final String questName = firstNonBlank(asString(quest.get("title")), asString(quest.get("name")),
                 "Quest " + (index + 1));
-        final TranslationSupport.Translation questNameTranslation = TranslationSupport
+        final EnglishTextSupport.ResolvedText questNameText = EnglishTextSupport
                 .fromNullableString(questName);
         final String questId = result.nextUniqueQuestId(chapterId, rawQuestId != null ? rawQuestId : questName);
         final String description = flattenDescription(quest.get("description"));
         final String subtitle = firstNonBlank(asString(quest.get("subtitle")), asString(quest.get("subtitle_id")));
-        final TranslationSupport.Translation subtitleTranslation = TranslationSupport
-                .fromNullableString(subtitle);
         final String icon = resolveIcon(quest.get("icon"));
         final Map<String, String> attributes = new LinkedHashMap<>();
         attributes.put("chapterId", chapterId);
@@ -136,13 +133,14 @@ final class FtbQuestDefinitionExtractor {
 
         final Map<String, Object> questEntry = new LinkedHashMap<>();
         questEntry.put("id", questId);
-        questEntry.put("name", questNameTranslation.englishOr(questName));
-        questNameTranslation.ensureFallback(questName);
-        final TranslationSupport.Translation questDescriptionTranslation = TranslationSupport
+        questNameText.ensureFallback(questName);
+        final String questTitle = questNameText.englishOr(questName);
+        questEntry.put("name", questTitle);
+        final EnglishTextSupport.ResolvedText questDescriptionText = EnglishTextSupport
                 .fromNullableString(!questDescription.isBlank() ? questDescription : null);
-        questDescriptionTranslation.ensureFallback(!questDescription.isBlank() ? questDescription : null);
+        questDescriptionText.ensureFallback(!questDescription.isBlank() ? questDescription : null);
         if (!questDescription.isBlank()) {
-            questEntry.put("description", questDescriptionTranslation.englishOr(questDescription));
+            questEntry.put("description", questDescriptionText.englishOr(questDescription));
         }
         questEntry.put("chapter", Objects.toString(chapterInfo.get("title"), chapterId));
         if (icon != null && !icon.isBlank()) {
@@ -158,7 +156,7 @@ final class FtbQuestDefinitionExtractor {
             questEntry.put("tags", tags);
         }
         result.addQuest(questEntry);
-        result.addTranslation(questId, "name", questNameTranslation);
+        result.addQuestEnglishResource(questId, questTitle);
     }
 
     private Collection<Map<String, Object>> extractQuestList(final Object questsObject) {
@@ -356,8 +354,8 @@ final class FtbQuestDefinitionExtractor {
         private final Logger logger;
         private final List<Map<String, Object>> quests = new ArrayList<>();
         private final List<Map<String, Object>> chapters = new ArrayList<>();
-        private final List<Map<String, Object>> translations = new ArrayList<>();
-        private final Set<String> translationKeys = new LinkedHashSet<>();
+        private final List<Map<String, Object>> englishResources = new ArrayList<>();
+        private final Set<String> resourceIds = new LinkedHashSet<>();
         private final Set<String> usedQuestIds = new LinkedHashSet<>();
         private final List<String> warnings = new ArrayList<>();
 
@@ -377,43 +375,25 @@ final class FtbQuestDefinitionExtractor {
             quests.add(quest);
         }
 
-        void addTranslation(final String fallbackId, final String field,
-                final TranslationSupport.Translation translation) {
-            if (field == null || translation == null) {
+        void addQuestEnglishResource(final String questId, final String englishTitle) {
+            final String sanitizedId = questId != null ? questId.trim() : null;
+            final String sanitizedTitle = englishTitle != null ? englishTitle.trim() : null;
+            if (sanitizedId == null || sanitizedId.isEmpty()) {
+                logger.warning("Englischer Ressourceneintrag ohne Quest-ID wurde verworfen.");
                 return;
             }
-            final String id = translation.determineId(fallbackId);
-            final String key = (id != null && !id.isBlank() ? id : String.valueOf(fallbackId)) + "#" + field;
-            if (id == null || id.isBlank()) {
-                logger.warning(() -> "Übersetzungseintrag übersprungen: " + key + " – keine ID ermittelbar.");
+            if (sanitizedTitle == null || sanitizedTitle.isEmpty()) {
+                logger.severe("Englischer Ressourceneintrag ohne Titel – betroffene Quest: " + sanitizedId);
                 return;
             }
-            if (!translation.hasText()) {
-                logger.warning(() -> "Übersetzungseintrag übersprungen: " + key
-                        + " – keine Textinhalte vorhanden.");
-                return;
-            }
-            final String deValue = translation.germanOr(null);
-            final String enValue = translation.englishOr(null);
-            if ((deValue == null || deValue.isBlank()) && (enValue == null || enValue.isBlank())) {
-                logger.warning(() -> "Übersetzungseintrag übersprungen: " + key
-                        + " – weder deutsche noch englische Werte vorhanden.");
-                return;
-            }
-            if (!translationKeys.add(key)) {
-                logger.fine(() -> "Übersetzungseintrag ignoriert, da bereits vorhanden: " + key);
+            if (!resourceIds.add(sanitizedId)) {
+                logger.warning("Duplizierter Quest-Ressourceneintrag ignoriert: " + sanitizedId);
                 return;
             }
             final Map<String, Object> entry = new LinkedHashMap<>();
-            entry.put("id", id);
-            entry.put("field", field);
-            entry.put("de", deValue != null ? deValue : enValue);
-            entry.put("en", enValue != null ? enValue : deValue);
-            if (enValue == null || enValue.isBlank()) {
-                logger.warning(() -> "Übersetzungseintrag ohne englischen Text, deutscher Wert wird verwendet: "
-                        + key);
-            }
-            translations.add(entry);
+            entry.put("id", sanitizedId);
+            entry.put("title", sanitizedTitle);
+            englishResources.add(entry);
         }
 
         String nextUniqueQuestId(final String chapterId, final String desiredId) {
@@ -440,8 +420,8 @@ final class FtbQuestDefinitionExtractor {
             return chapters.size();
         }
 
-        int getTranslationCount() {
-            return translations.size();
+        int getEnglishResourceCount() {
+            return englishResources.size();
         }
 
         List<String> getWarnings() {
@@ -453,9 +433,8 @@ final class FtbQuestDefinitionExtractor {
                     .comparing((Map<String, Object> map) -> Objects.toString(map.get("id"), "")));
             chapters.sort(Comparator
                     .comparing((Map<String, Object> map) -> Objects.toString(map.get("id"), "")));
-            translations.sort(Comparator
-                    .comparing((Map<String, Object> map) -> Objects.toString(map.get("id"), ""))
-                    .thenComparing(map -> Objects.toString(map.get("field"), "")));
+            englishResources.sort(Comparator
+                    .comparing((Map<String, Object> map) -> Objects.toString(map.get("id"), "")));
             warnings.sort(String::compareTo);
         }
 
@@ -475,12 +454,12 @@ final class FtbQuestDefinitionExtractor {
             return root;
         }
 
-        Map<String, Object> toTranslationDocument(final Instant generatedAt, final String sourceDescription) {
+        Map<String, Object> toEnglishResourceDocument(final Instant generatedAt, final String sourceDescription) {
             final Map<String, Object> root = new LinkedHashMap<>();
             root.put("generatedAt", generatedAt.toString());
             root.put("source", sourceDescription);
-            root.put("entryCount", translations.size());
-            root.put("entries", new ArrayList<>(translations));
+            root.put("entryCount", englishResources.size());
+            root.put("entries", new ArrayList<>(englishResources));
             return root;
         }
     }

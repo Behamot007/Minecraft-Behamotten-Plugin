@@ -34,7 +34,7 @@ public final class QuestMasterCommand implements CommandExecutor {
                     final StringBuilder message = new StringBuilder();
                     message.append(ChatColor.GREEN).append("Quest-Masterdatei wurde aktualisiert (")
                             .append(result.getQuestCount()).append(" Quests in ").append(result.getChapterCount())
-                            .append(" Kapiteln, ").append(result.getTranslationCount()).append(" Übersetzungen)");
+                            .append(" Kapiteln, ").append(result.getEnglishResourceCount()).append(" englische Texte)");
                     final List<String> warnings = result.getWarnings();
                     if (!warnings.isEmpty()) {
                         message.append(ChatColor.YELLOW).append(" – Warnungen: ").append(String.join(", ", warnings));
