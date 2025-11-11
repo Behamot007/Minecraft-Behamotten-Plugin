@@ -1,6 +1,7 @@
 package com.behamotten.events.advancements;
 
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -34,6 +35,7 @@ public final class AdvancementExporter {
     private final Logger logger;
     private final Path outputFile;
     private final PlainTextRenderer plainSerializer;
+    private final AdvancementDisplayAdapter displayAdapter;
 
     public AdvancementExporter(final JavaPlugin plugin, final Player player) {
         this.plugin = plugin;
@@ -41,6 +43,7 @@ public final class AdvancementExporter {
         this.logger = plugin.getLogger();
         this.outputFile = plugin.getDataFolder().toPath().resolve("advancements_export.json");
         this.plainSerializer = PlainTextRenderer.create(this.logger);
+        this.displayAdapter = new AdvancementDisplayAdapter(this.logger);
     }
 
     /**
@@ -69,10 +72,10 @@ public final class AdvancementExporter {
             awardAllCriteria(advancement);
             final String advancementId = advancement.getKey().toString();
             final AdvancementDisplay display = advancement.getDisplay();
-            final String title = resolveDisplayText(display != null ? display.title() : null, advancementId,
-                    plainSerializer);
-            final String description = resolveDisplayText(display != null ? display.description() : null, "",
-                    plainSerializer);
+            final Component titleComponent = displayAdapter.resolveTitle(display);
+            final String title = resolveDisplayText(titleComponent, advancementId, plainSerializer);
+            final Component descriptionComponent = displayAdapter.resolveDescription(display);
+            final String description = resolveDisplayText(descriptionComponent, "", plainSerializer);
             final GroupInfo groupInfo = resolveGroupInfo(advancement, title, groupIndex, plainSerializer);
 
             final Map<String, Object> entry = new LinkedHashMap<>();
@@ -152,8 +155,8 @@ public final class AdvancementExporter {
         final NamespacedKey groupKey = root != null ? root.getKey() : advancement.getKey();
         final AdvancementDisplay display = root != null ? root.getDisplay() : advancement.getDisplay();
         final String groupId = groupKey.toString();
-        final String groupTitle = resolveDisplayText(display != null ? display.title() : null, fallbackTitle,
-                plainSerializer);
+        final Component groupTitleComponent = displayAdapter.resolveTitle(display);
+        final String groupTitle = resolveDisplayText(groupTitleComponent, fallbackTitle, plainSerializer);
         return groupIndex.compute(groupId, (key, existing) -> {
             if (existing == null) {
                 return new GroupInfo(groupId, groupTitle);
@@ -240,6 +243,97 @@ public final class AdvancementExporter {
             groups.add(groupEntry);
         }
         return groups;
+    }
+
+    /**
+     * Reflection based adapter that resolves advancement display components across API versions.
+     */
+    private static final class AdvancementDisplayAdapter {
+        private final Accessor titleAccessor;
+        private final Accessor descriptionAccessor;
+
+        AdvancementDisplayAdapter(final Logger logger) {
+            this.titleAccessor = new Accessor(logger, "title", "title", "getTitle");
+            this.descriptionAccessor = new Accessor(logger, "description", "description", "getDescription");
+        }
+
+        Component resolveTitle(final AdvancementDisplay display) {
+            return titleAccessor.resolve(display);
+        }
+
+        Component resolveDescription(final AdvancementDisplay display) {
+            return descriptionAccessor.resolve(display);
+        }
+
+        private static final class Accessor {
+            private final Logger logger;
+            private final String label;
+            private final Method method;
+            private boolean missingLogged;
+            private boolean invocationLogged;
+            private boolean typeLogged;
+            private boolean lookupFailureLogged;
+
+            Accessor(final Logger logger, final String label, final String... candidateNames) {
+                this.logger = Objects.requireNonNull(logger, "logger");
+                this.label = Objects.requireNonNull(label, "label");
+                this.method = resolveAccessor(candidateNames);
+            }
+
+            private Method resolveAccessor(final String... candidateNames) {
+                final Class<AdvancementDisplay> displayClass = AdvancementDisplay.class;
+                for (final String name : candidateNames) {
+                    try {
+                        final Method method = displayClass.getMethod(name);
+                        if (Component.class.isAssignableFrom(method.getReturnType())) {
+                            method.setAccessible(true);
+                            return method;
+                        }
+                    } catch (final NoSuchMethodException exception) {
+                        // Continue searching the next candidate.
+                    } catch (final SecurityException exception) {
+                        if (!lookupFailureLogged) {
+                            lookupFailureLogged = true;
+                            logger.fine(() -> "Could not access advancement display method '" + name + "': "
+                                    + exception.getMessage());
+                        }
+                    }
+                }
+                return null;
+            }
+
+            Component resolve(final AdvancementDisplay display) {
+                if (display == null) {
+                    return null;
+                }
+                if (method == null) {
+                    if (!missingLogged) {
+                        missingLogged = true;
+                        logger.warning(() -> "Advancement display does not expose a '" + label
+                                + "' accessor. Exported data may be missing text.");
+                    }
+                    return null;
+                }
+                try {
+                    final Object value = method.invoke(display);
+                    if (value instanceof Component) {
+                        return (Component) value;
+                    }
+                    if (!typeLogged) {
+                        typeLogged = true;
+                        logger.warning(() -> "Unexpected return type from advancement display '" + method.getName()
+                                + "': " + (value != null ? value.getClass().getName() : "null"));
+                    }
+                } catch (final ReflectiveOperationException | RuntimeException exception) {
+                    if (!invocationLogged) {
+                        invocationLogged = true;
+                        logger.warning(() -> "Failed to invoke advancement display '" + method.getName() + "': "
+                                + exception.getMessage());
+                    }
+                }
+                return null;
+            }
+        }
     }
 
     /**
