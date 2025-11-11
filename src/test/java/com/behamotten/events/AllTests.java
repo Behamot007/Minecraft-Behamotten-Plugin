@@ -11,8 +11,6 @@ public final class AllTests {
     public static void main(final String[] args) {
         new EventParticipationDataTest().run();
         new EventCommandRegistrarTest().run();
-        new com.behamotten.events.progress.SnbtParserTest().run();
-        new com.behamotten.events.progress.FtbQuestDefinitionExtractorTest().run();
         System.out.println("All tests passed.");
     }
 }

@@ -17,14 +17,10 @@ commands:
     description: Listet registrierte Event-Teilnehmer auf oder wählt einen zufällig aus.
     usage: /getalleventuser [@r]
     permission: behamotten.getall
-  generatequestmaster:
-    description: Erstellt die FTB-Quest-Masterdatei neu.
-    usage: /generatequestmaster
-    permission: behamotten.progress.quest
-  generateadvancementmaster:
-    description: Erstellt die Advancement-Masterdatei neu.
-    usage: /generateadvancementmaster
-    permission: behamotten.progress.advancement
+  exportadvancements:
+    description: Exportiert alle bekannten Advancements als konsolidierte JSON-Datei.
+    usage: /exportadvancements
+    permission: behamotten.export.advancements
 permissions:
   behamotten.setevents:
     description: Erlaubt einem Spieler, sich für Events zu registrieren.
@@ -35,9 +31,6 @@ permissions:
   behamotten.getall:
     description: Erlaubt das Anzeigen aller registrierten Event-Teilnehmer.
     default: op
-  behamotten.progress.quest:
-    description: Erlaubt das Erstellen der Quest-Masterdatei.
-    default: op
-  behamotten.progress.advancement:
-    description: Erlaubt das Erstellen der Advancement-Masterdatei.
+  behamotten.export.advancements:
+    description: Erlaubt das Exportieren aller Advancements in eine JSON-Datei.
     default: op
