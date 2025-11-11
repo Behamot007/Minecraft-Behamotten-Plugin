@@ -30,165 +30,55 @@ Das Skript verwendet das im Repository enthaltene `gradle/wrapper/gradle-wrapper
 | `/unsetevents` | `behamotten.unsetevents` (Standard: erlaubt) | Entfernt den ausführenden Spieler aus der Eventliste. |
 | `/getalleventuser` | `behamotten.getall` (Standard: nur Operatoren) | Listet alle registrierten Spieler auf. |
 | `/getalleventuser @r` | `behamotten.getall` (Standard: nur Operatoren) | Gibt einen zufälligen registrierten Spieler zurück. |
-| `/generatequestmaster` | `behamotten.progress.quest` (Standard: nur Operatoren) | Aktualisiert die Quest-Masterdatei und erstellt optionale Übersetzungen neu. |
-| `/generateadvancementmaster` | `behamotten.progress.advancement` (Standard: nur Operatoren) | Aktualisiert die Advancement-Masterdatei sowie die zugehörigen Übersetzungen. |
+| `/exportadvancements` | `behamotten.export.advancements` (Standard: nur Operatoren) | Erstellt eine konsolidierte JSON-Datei mit allen aktuell bekannten Advancements. |
 
 ## Datenpersistenz
 
 Die Liste der registrierten Spieler wird im Plugin-Datenordner (`plugins/BehamottenEventTools/event_participants.yml`) gespeichert und über Neustarts hinweg beibehalten.
 
-## Fortschritts-Export (JSON)
+## Advancement-Export (JSON)
 
-Zusätzlich zum Event-Teilnahmestatus exportiert das Plugin strukturierte JSON-Dateien, die sich für externe Auswertungen eignen. Die Dateien werden lokal im Plugin-Datenordner erzeugt – es erfolgt **kein Versand an externe APIs oder Dienste**.
+Mit `/exportadvancements` erzeugt das Plugin eine einzelne Datei `plugins/BehamottenEventTools/advancements_export.json`. Während des Exports erhält der ausführende Spieler automatisch alle bekannten Advancements, damit auch versteckte Einträge zuverlässig aufgelistet werden. Das Ergebnis besteht ausschließlich aus lokal gespeicherten Daten.
 
-### Speicherort
-
-- **Advancement-Masterdatei**: `plugins/BehamottenEventTools/progress_master_advancements.json`
-- **Quest-Masterdatei**: `plugins/BehamottenEventTools/progress_master_quests.json`
-- **Englische Advancement-Ressourcen**: `plugins/BehamottenEventTools/advancements_en_us.json`
-- **Englische Quest-Ressourcen**: `plugins/BehamottenEventTools/ftbquests_en_us.json`
-- **FTB-Quest-Definitionen**: `plugins/BehamottenEventTools/ftbquests_definitions.json`
-- **Spielerdateien**: `plugins/BehamottenEventTools/progress_players/<uuid>.json`
-- **Änderungsprotokoll**: `plugins/BehamottenEventTools/progress_player_updates.log`
-
-Die Masterdateien werden **nicht** mehr automatisch beim Serverstart erzeugt. Verwenden Sie stattdessen die Verwaltungsbefehle `/generateadvancementmaster` und `/generatequestmaster`, um die jeweiligen Exporte neu zu schreiben. Beide Befehle melden den Erfolg direkt im Chat und geben bei Problemen eine Fehlermeldung aus. Detaillierte Ursachen (z. B. fehlende Schreibrechte) finden Sie im Server-Log.
-
-Der Quest-Befehl liest die SNBT-Dateien aus `config/ftbquests/quests/`, konvertiert sie in `ftbquests_definitions.json` und erzeugt zusätzlich eine englische Ressourcendatei mit Quest-Titeln. Der Advancement-Befehl exportiert alle aktuell registrierten Advancements und erstellt parallel eine Ressourcendatei mit englischen Titeln und Beschreibungen.
-
-Spielerabschlüsse werden weiterhin für **alle** Spieler kontinuierlich aufgezeichnet. Jede Änderung führt zu einer Aktualisierung der jeweiligen Spielerdatei und zu einem neuen Eintrag im Änderungsprotokoll. Beim Herunterfahren (`onDisable`) wird ein abschließender Schreibvorgang für noch offene Spieler durchgeführt.
-
-### Struktur der Master-Dateien (`progress_master_advancements.json` / `progress_master_quests.json`)
+### Beispielstruktur
 
 ```jsonc
 {
-  "generatedAt": "2024-11-10T17:32:11.235Z",
-  "entries": [
+  "meta": {
+    "generated_at": "2025-11-10T20:19:26.520948Z",
+    "advancaments_found": 2636,
+    "group_titles_found": 13
+  },
+  "groups": [
     {
-      "id": "minecraft:story/root",
-      "type": "ADVANCEMENT", // oder "QUEST"
-      "name": "Das Abenteuer beginnt",
-      "description": "Betritt die Welt",
-      "parentId": "minecraft:story/mine_stone",
-      "icon": "minecraft:crafting_table",
-      "attributes": {
-        "announceToChat": true,
-        "frame": "TASK",
-        "chapter": "Main Quests" // optional, z. B. aus FTB-Quests
-      },
-      "criteria": [
-        "crafted_table"
-      ]
+      "id": "minecraft:adventure/root",
+      "title": "Adventure"
     }
-  ]
-}
-```
-
-| Feld | Typ | Beschreibung |
-| ---- | --- | ------------- |
-| `generatedAt` | ISO-8601-Zeitstempel | Zeitpunkt, zu dem die Datei erstellt wurde. |
-| `entries` | Array | Liste aller bekannten Achievements/Quests. |
-| `entries[].id` | String | Eindeutige Kennung (`namespace:path` für Advancements, frei wählbar für Quests). |
-| `entries[].type` | String | `ADVANCEMENT` oder `QUEST`. |
-| `entries[].name` | String, optional | Titel des Eintrags. |
-| `entries[].description` | String, optional | Beschreibung des Eintrags. |
-| `entries[].parentId` | String, optional | Übergeordnete Achievement-ID (falls vorhanden). |
-| `entries[].icon` | String, optional | Zeichenkettenrepräsentation des Icons (Item-Namensraum). |
-| `entries[].attributes` | Objekt, optional | Zusätzliche Merkmale (Anzeigeoptionen, Quest-Metadaten usw.). |
-| `entries[].criteria` | Array<String> | Liste aller Kriterien/Tasks, die für diesen Eintrag existieren. |
-
-### Struktur einer Spielerdatei (`progress_players/<uuid>.json`)
-
-```jsonc
-{
-  "playerId": "c0ffee00-4b1d-4ead-babe-001122334455",
-  "lastKnownName": "Spieler123", // optional
-  "exportedAt": "2024-11-10T17:33:02.017Z",
-  "completions": [
+  ],
+  "advancaments": [
     {
-      "entryId": "minecraft:story/root",
-      "type": "ADVANCEMENT",
-      "completedAt": "2024-11-02T19:45:12.901Z",
-      "completedCriteria": [
-        "crafted_table"
+      "advancaments_id": "minecraft:adventure/arbalistic",
+      "advancaments_title": "Arbalistic",
+      "advancaments_description": "Kill five unique mobs with a single crossbow shot.",
+      "source_file": "data/minecraft/advancements/adventure/arbalistic.json",
+      "dependencies": [
+        "minecraft:adventure/root"
       ],
-      "details": {
-        "source": "advancement",
-        "world": "world"
-      }
+      "group_id": "minecraft:adventure/root"
     }
   ]
 }
 ```
 
-| Feld | Typ | Beschreibung |
-| ---- | --- | ------------- |
-| `playerId` | UUID als String | UUID des Spielers. |
-| `lastKnownName` | String, optional | Letzter bekannter Spielername. |
-| `exportedAt` | ISO-8601-Zeitstempel | Zeitpunkt des Dateiexports. |
-| `completions` | Array | Liste aller abgeschlossenen Einträge. |
-| `completions[].entryId` | String | Fremdschlüssel auf `entries[].id` der Master-Datei. |
-| `completions[].type` | String | `ADVANCEMENT` oder `QUEST`. |
-| `completions[].completedAt` | ISO-8601-Zeitstempel | Abschlusszeitpunkt. |
-| `completions[].completedCriteria` | Array<String>, optional | Erfüllte Kriterien/Tasks. |
-| `completions[].details` | Objekt, optional | Zusätzliche Metadaten (z. B. `source`, Weltname, Belohnungsinformationen). |
+Die Datei folgt diesen Regeln:
 
-### Struktur der englischen Ressourcendateien (`advancements_en_us.json` / `ftbquests_en_us.json`)
+- `meta.generated_at` enthält einen ISO-8601-Zeitstempel (UTC).
+- `meta.advancaments_found` entspricht der Anzahl aller verarbeiteten Advancements.
+- `meta.group_titles_found` gibt die Anzahl der erkannten Obergruppen an. Eine Gruppe entspricht dem Wurzel-Advancement der jeweiligen Reihe.
+- `groups` listet alle Gruppen mit ihrer eindeutigen ID (der Schlüssel des Wurzel-Advancements) und dem auf Englisch aufgelösten Titel.
+- `advancaments` enthält jedes Advancement mit Kennung, Titel, optionaler Beschreibung, dem vermuteten Quellpfad in den Vanilla-Daten (`data/<namespace>/advancements/<path>.json`), einer Liste von Abhängigkeiten (aktuelles Eltern-Advancement) sowie der zugehörigen Gruppe.
 
-```jsonc
-{
-  "generatedAt": "2024-11-10T17:32:11.235Z",
-  "source": "advancements",
-  "entryCount": 1,
-  "entries": [
-    {
-      "id": "minecraft:story/root",
-      "title": "The Adventure Begins",
-      "description": "Enter the world"
-    }
-  ]
-}
-```
-
-Die Quest-Ressourcendatei besitzt dieselben Metadaten, ihre Einträge enthalten jedoch ausschließlich `id` und `title`. Alle Texte liegen bereits in Englisch vor und dienen als Grundlage für externe Ressourcen-Pakete.
-
-### Struktur des Änderungsprotokolls (`progress_player_updates.log`)
-
-Das Änderungsprotokoll ist eine einfache JSON-Lines-Datei. Für jede gespeicherte Änderung wird eine Zeile mit folgenden Feldern angefügt:
-
-```json
-{"playerId":"c0ffee00-4b1d-4ead-babe-001122334455","updatedAt":"2024-11-10T17:33:02.017Z","lastKnownName":"Spieler123"}
-```
-
-- `playerId`: UUID des Spielers.
-- `updatedAt`: Zeitpunkt, zu dem die zugehörige Spielerdatei zuletzt geschrieben wurde.
-- `lastKnownName`: Optional, wenn ein Spielername bekannt ist.
-
-Über dieses Log lässt sich von extern leicht erkennen, welche Spieler-Dateien seit dem letzten Abgleich verändert wurden.
-
-### Import von FTB-Quests (`ftbquests_definitions.json`)
-
-Beim Ausführen von `/generatequestmaster` erzeugt das Plugin – falls noch nicht vorhanden – eine Definitionsdatei mit folgender Struktur (alternativ kann eine manuell gepflegte Datei im gleichen Format verwendet werden):
-
-```jsonc
-{
-  "quests": [
-    {
-      "id": "ftbquests:chapter1/quest3",
-      "name": "Technik-Stufe 1",
-      "description": "Schalte den Ofen frei",
-      "chapter": "Kapitel 1",
-      "icon": "minecraft:blast_furnace",
-      "attributes": {
-        "difficulty": "EASY"
-      },
-      "criteria": ["craft_blast_furnace"],
-      "tags": ["tech", "starter"]
-    }
-  ]
-}
-```
-
-Alle Felder sind optional, mit Ausnahme der Quest-`id`. Attribute und Tags werden unverändert in die Master-Datei übernommen. Die Zuordnung zu Spielerabschlüssen erfolgt ausschließlich über die `entryId` (Quest-ID).
+Fehler beim Zugriff auf den Server oder beim Schreiben der Datei werden sowohl im Chat als auch im Server-Log gemeldet.
 
 ## Lizenz
 
