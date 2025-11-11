@@ -22,7 +22,6 @@ import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 
 /**
  * Collects data about all registered advancements and stores them in a single JSON file.
@@ -34,12 +33,14 @@ public final class AdvancementExporter {
     private final Player player;
     private final Logger logger;
     private final Path outputFile;
+    private final PlainTextRenderer plainSerializer;
 
     public AdvancementExporter(final JavaPlugin plugin, final Player player) {
         this.plugin = plugin;
         this.player = player;
         this.logger = plugin.getLogger();
         this.outputFile = plugin.getDataFolder().toPath().resolve("advancements_export.json");
+        this.plainSerializer = PlainTextRenderer.create(this.logger);
     }
 
     /**
@@ -47,7 +48,7 @@ public final class AdvancementExporter {
      */
     public ExportResult export() throws AdvancementExportException {
         ensureDataFolder();
-        final PlainTextComponentSerializer plainSerializer = PlainTextComponentSerializer.plainText();
+        final PlainTextRenderer plainSerializer = this.plainSerializer;
         final List<Map<String, Object>> advancementEntries = new ArrayList<>();
         final Map<String, GroupInfo> groupIndex = new LinkedHashMap<>();
         final Instant generationTime = Instant.now();
@@ -146,7 +147,7 @@ public final class AdvancementExporter {
     }
 
     private GroupInfo resolveGroupInfo(final Advancement advancement, final String fallbackTitle,
-            final Map<String, GroupInfo> groupIndex, final PlainTextComponentSerializer plainSerializer) {
+            final Map<String, GroupInfo> groupIndex, final PlainTextRenderer plainSerializer) {
         final Advancement root = findRoot(advancement);
         final NamespacedKey groupKey = root != null ? root.getKey() : advancement.getKey();
         final AdvancementDisplay display = root != null ? root.getDisplay() : advancement.getDisplay();
@@ -180,7 +181,7 @@ public final class AdvancementExporter {
     }
 
     private String resolveDisplayText(final Component component, final String fallback,
-            final PlainTextComponentSerializer serializer) {
+            final PlainTextRenderer serializer) {
         Component resolvedComponent = component;
         if (component != null) {
             resolvedComponent = translate(component);
@@ -239,6 +240,58 @@ public final class AdvancementExporter {
             groups.add(groupEntry);
         }
         return groups;
+    }
+
+    /**
+     * Helper that attempts to serialize Adventure components to plain text while gracefully
+     * handling environments where the Adventure plain text serializer is not available.
+     */
+    private static final class PlainTextRenderer {
+        private final Logger logger;
+        private final Object serializerInstance;
+        private final java.lang.reflect.Method serializeMethod;
+
+        private PlainTextRenderer(final Logger logger, final Object serializerInstance,
+                final java.lang.reflect.Method serializeMethod) {
+            this.logger = logger;
+            this.serializerInstance = serializerInstance;
+            this.serializeMethod = serializeMethod;
+        }
+
+        static PlainTextRenderer create(final Logger logger) {
+            Objects.requireNonNull(logger, "logger");
+            try {
+                final Class<?> serializerClass = Class
+                        .forName("net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer");
+                final var plainTextMethod = serializerClass.getMethod("plainText");
+                final Object instance = plainTextMethod.invoke(null);
+                final var serializeMethod = serializerClass.getMethod("serialize", Component.class);
+                return new PlainTextRenderer(logger, instance, serializeMethod);
+            } catch (final ReflectiveOperationException | RuntimeException exception) {
+                logger.warning(() -> "Plain text serializer from Adventure is unavailable. Falling back to"
+                        + " Component#toString(): " + exception.getMessage());
+                return new PlainTextRenderer(logger, null, null);
+            }
+        }
+
+        String serialize(final Component component) {
+            if (component == null) {
+                return "";
+            }
+            if (serializerInstance != null && serializeMethod != null) {
+                try {
+                    final Object result = serializeMethod.invoke(serializerInstance, component);
+                    if (result instanceof String) {
+                        return (String) result;
+                    }
+                } catch (final ReflectiveOperationException | RuntimeException exception) {
+                    logger.fine(() -> "Failed to serialize component using Adventure serializer: "
+                            + exception.getMessage());
+                }
+            }
+            final String fallback = component.toString();
+            return fallback != null ? fallback : "";
+        }
     }
 
     /**
