@@ -22,8 +22,6 @@ import org.bukkit.advancement.AdvancementProgress;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
-import net.kyori.adventure.text.Component;
-
 /**
  * Collects data about all registered advancements and stores them in a single JSON file.
  */
@@ -34,6 +32,7 @@ public final class AdvancementExporter {
     private final Player player;
     private final Logger logger;
     private final Path outputFile;
+    private final Class<?> adventureComponentClass;
     private final PlainTextRenderer plainSerializer;
     private final AdvancementDisplayAdapter displayAdapter;
 
@@ -42,8 +41,9 @@ public final class AdvancementExporter {
         this.player = player;
         this.logger = plugin.getLogger();
         this.outputFile = plugin.getDataFolder().toPath().resolve("advancements_export.json");
-        this.plainSerializer = PlainTextRenderer.create(this.logger);
-        this.displayAdapter = new AdvancementDisplayAdapter(this.logger);
+        this.adventureComponentClass = resolveAdventureComponentClass(this.logger);
+        this.plainSerializer = PlainTextRenderer.create(this.logger, this.adventureComponentClass);
+        this.displayAdapter = new AdvancementDisplayAdapter(this.logger, this.adventureComponentClass);
     }
 
     /**
@@ -72,9 +72,9 @@ public final class AdvancementExporter {
             awardAllCriteria(advancement);
             final String advancementId = advancement.getKey().toString();
             final AdvancementDisplay display = advancement.getDisplay();
-            final Component titleComponent = displayAdapter.resolveTitle(display);
+            final Object titleComponent = displayAdapter.resolveTitle(display);
             final String title = resolveDisplayText(titleComponent, advancementId, plainSerializer);
-            final Component descriptionComponent = displayAdapter.resolveDescription(display);
+            final Object descriptionComponent = displayAdapter.resolveDescription(display);
             final String description = resolveDisplayText(descriptionComponent, "", plainSerializer);
             final GroupInfo groupInfo = resolveGroupInfo(advancement, title, groupIndex, plainSerializer);
 
@@ -155,7 +155,7 @@ public final class AdvancementExporter {
         final NamespacedKey groupKey = root != null ? root.getKey() : advancement.getKey();
         final AdvancementDisplay display = root != null ? root.getDisplay() : advancement.getDisplay();
         final String groupId = groupKey.toString();
-        final Component groupTitleComponent = displayAdapter.resolveTitle(display);
+        final Object groupTitleComponent = displayAdapter.resolveTitle(display);
         final String groupTitle = resolveDisplayText(groupTitleComponent, fallbackTitle, plainSerializer);
         return groupIndex.compute(groupId, (key, existing) -> {
             if (existing == null) {
@@ -183,9 +183,9 @@ public final class AdvancementExporter {
         return current;
     }
 
-    private String resolveDisplayText(final Component component, final String fallback,
+    private String resolveDisplayText(final Object component, final String fallback,
             final PlainTextRenderer serializer) {
-        Component resolvedComponent = component;
+        Object resolvedComponent = component;
         if (component != null) {
             resolvedComponent = translate(component);
         }
@@ -198,18 +198,31 @@ public final class AdvancementExporter {
         return fallback != null ? fallback : "";
     }
 
-    private Component translate(final Component component) {
+    private Object translate(final Object component) {
+        final Class<?> componentClass = this.adventureComponentClass;
+        if (componentClass == null || !componentClass.isInstance(component)) {
+            return component;
+        }
         try {
             final Class<?> translatorClass = Class.forName("net.kyori.adventure.translation.GlobalTranslator");
-            final var renderMethod = translatorClass.getMethod("render", Component.class, Locale.class);
+            final var renderMethod = translatorClass.getMethod("render", componentClass, Locale.class);
             final Object translated = renderMethod.invoke(null, component, Locale.ENGLISH);
-            if (translated instanceof Component) {
-                return (Component) translated;
+            if (componentClass.isInstance(translated)) {
+                return translated;
             }
         } catch (final ReflectiveOperationException | RuntimeException exception) {
             logger.fine(() -> "Could not translate component to English: " + exception.getMessage());
         }
         return component;
+    }
+
+    private Class<?> resolveAdventureComponentClass(final Logger logger) {
+        try {
+            return Class.forName("net.kyori.adventure.text.Component");
+        } catch (final ClassNotFoundException exception) {
+            logger.fine(() -> "Adventure component classes are unavailable: " + exception.getMessage());
+            return null;
+        }
     }
 
     private List<String> buildDependencies(final Advancement advancement) {
@@ -252,16 +265,17 @@ public final class AdvancementExporter {
         private final Accessor titleAccessor;
         private final Accessor descriptionAccessor;
 
-        AdvancementDisplayAdapter(final Logger logger) {
-            this.titleAccessor = new Accessor(logger, "title", "title", "getTitle");
-            this.descriptionAccessor = new Accessor(logger, "description", "description", "getDescription");
+        AdvancementDisplayAdapter(final Logger logger, final Class<?> componentClass) {
+            this.titleAccessor = new Accessor(logger, componentClass, "title", "title", "getTitle");
+            this.descriptionAccessor = new Accessor(logger, componentClass, "description", "description",
+                    "getDescription");
         }
 
-        Component resolveTitle(final AdvancementDisplay display) {
+        Object resolveTitle(final AdvancementDisplay display) {
             return titleAccessor.resolve(display);
         }
 
-        Component resolveDescription(final AdvancementDisplay display) {
+        Object resolveDescription(final AdvancementDisplay display) {
             return descriptionAccessor.resolve(display);
         }
 
@@ -273,10 +287,13 @@ public final class AdvancementExporter {
             private boolean invocationLogged;
             private boolean typeLogged;
             private boolean lookupFailureLogged;
+            private final Class<?> componentClass;
 
-            Accessor(final Logger logger, final String label, final String... candidateNames) {
+            Accessor(final Logger logger, final Class<?> componentClass, final String label,
+                    final String... candidateNames) {
                 this.logger = Objects.requireNonNull(logger, "logger");
                 this.label = Objects.requireNonNull(label, "label");
+                this.componentClass = componentClass;
                 this.method = resolveAccessor(candidateNames);
             }
 
@@ -285,7 +302,7 @@ public final class AdvancementExporter {
                 for (final String name : candidateNames) {
                     try {
                         final Method method = displayClass.getMethod(name);
-                        if (Component.class.isAssignableFrom(method.getReturnType())) {
+                        if (componentClass == null || componentClass.isAssignableFrom(method.getReturnType())) {
                             method.setAccessible(true);
                             return method;
                         }
@@ -297,12 +314,19 @@ public final class AdvancementExporter {
                             logger.fine(() -> "Could not access advancement display method '" + name + "': "
                                     + exception.getMessage());
                         }
+                    } catch (final NoClassDefFoundError error) {
+                        if (!lookupFailureLogged) {
+                            lookupFailureLogged = true;
+                            logger.fine(() -> "Advancement display depends on unavailable Adventure classes: "
+                                    + error.getMessage());
+                        }
+                        return null;
                     }
                 }
                 return null;
             }
 
-            Component resolve(final AdvancementDisplay display) {
+            Object resolve(final AdvancementDisplay display) {
                 if (display == null) {
                     return null;
                 }
@@ -316,8 +340,8 @@ public final class AdvancementExporter {
                 }
                 try {
                     final Object value = method.invoke(display);
-                    if (value instanceof Component) {
-                        return (Component) value;
+                    if (componentClass == null || componentClass.isInstance(value)) {
+                        return value;
                     }
                     if (!typeLogged) {
                         typeLogged = true;
@@ -344,35 +368,43 @@ public final class AdvancementExporter {
         private final Logger logger;
         private final Object serializerInstance;
         private final java.lang.reflect.Method serializeMethod;
+        private final Class<?> componentClass;
 
         private PlainTextRenderer(final Logger logger, final Object serializerInstance,
-                final java.lang.reflect.Method serializeMethod) {
+                final java.lang.reflect.Method serializeMethod, final Class<?> componentClass) {
             this.logger = logger;
             this.serializerInstance = serializerInstance;
             this.serializeMethod = serializeMethod;
+            this.componentClass = componentClass;
         }
 
-        static PlainTextRenderer create(final Logger logger) {
+        static PlainTextRenderer create(final Logger logger, final Class<?> componentClass) {
             Objects.requireNonNull(logger, "logger");
+            if (componentClass == null) {
+                logger.warning(() -> "Adventure component classes are unavailable. Falling back to"
+                        + " Component#toString().");
+                return new PlainTextRenderer(logger, null, null, null);
+            }
             try {
                 final Class<?> serializerClass = Class
                         .forName("net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer");
                 final var plainTextMethod = serializerClass.getMethod("plainText");
                 final Object instance = plainTextMethod.invoke(null);
-                final var serializeMethod = serializerClass.getMethod("serialize", Component.class);
-                return new PlainTextRenderer(logger, instance, serializeMethod);
+                final var serializeMethod = serializerClass.getMethod("serialize", componentClass);
+                return new PlainTextRenderer(logger, instance, serializeMethod, componentClass);
             } catch (final ReflectiveOperationException | RuntimeException exception) {
                 logger.warning(() -> "Plain text serializer from Adventure is unavailable. Falling back to"
                         + " Component#toString(): " + exception.getMessage());
-                return new PlainTextRenderer(logger, null, null);
+                return new PlainTextRenderer(logger, null, null, componentClass);
             }
         }
 
-        String serialize(final Component component) {
+        String serialize(final Object component) {
             if (component == null) {
                 return "";
             }
-            if (serializerInstance != null && serializeMethod != null) {
+            if (serializerInstance != null && serializeMethod != null && componentClass != null
+                    && componentClass.isInstance(component)) {
                 try {
                     final Object result = serializeMethod.invoke(serializerInstance, component);
                     if (result instanceof String) {
